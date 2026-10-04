@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose supplies the real theme; this only needs to avoid an ActionBar, because
+         the whole UI is drawn by Compose and a second one would sit above it. -->
+    <style name="Theme.VoterList" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
