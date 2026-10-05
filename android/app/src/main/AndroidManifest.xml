@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No <uses-permission> of any kind, deliberately.
+
+  The roll is bundled in the APK and edited in internal storage, exports go through the
+  system file picker, and nothing talks to a network. Every one of those is possible without
+  a permission, so asking for one would be asking the user for trust the app does not need.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      AndroidX Core injects a signature-level permission of its own,
+      DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, so that context-registered receivers are
+      safe on older releases. It grants this app nothing: it is defined by this same APK
+      and never appears in an install prompt. But it is still a uses-permission line, and
+      "zero permissions" should mean zero lines rather than "none that matter". Removed so
+      that the manifest says exactly what it means.
+    -->
+    <uses-permission
+        android:name="com.kraft.voterlist.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        tools:node="remove" />
+
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Booth Survey"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.VoterList">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="Booth Survey"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

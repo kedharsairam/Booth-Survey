@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- A ballot box: a lid, a body, and a slip going in. -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M28,34h52v6h-52z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M32,44h44v34h-44z" />
+    <path android:fillColor="#1B5E20"
+        android:pathData="M48,20h12v16h-12z" />
+</vector>

@@ -1,0 +1,47 @@
+# Everything here is derived from the electoral roll or produced from it. None of it goes
+# into git. The repository holds the code that reads the roll; the roll itself, and every
+# artefact carrying a name, a voter ID or a house number, stays on this machine.
+#
+# This matters more than usual for this project: the roll is a list of named voters with
+# their voter IDs and their homes. It is not a test fixture.
+
+# Extracted data and intermediate output.
+# These were tracked once, in local commits that were never pushed. They are the electoral
+# roll and pages rendered out of it, so they must not come back.
+out/
+samples/
+tools/__pycache__/
+**/__pycache__/
+*.pyc
+*.csv
+*.jsonl
+
+# The app deliberately ships with no voter data in it. There is no seed to ignore because
+# there is no seed: a booth is imported by the person using it, on their own phone.
+android/app/src/main/assets/voters.json
+
+# Built artefacts
+dist/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.keystore
+*.jks
+
+# Signing material, if a release key is ever added
+android/keystore.properties
+
+# Editors and OS noise
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Screenshots and scratch captures taken during UI work
+*.png
+!android/**/*.png
+
+# Kotlin build scratch -- compiler crash logs, not source.
+.kotlin/
