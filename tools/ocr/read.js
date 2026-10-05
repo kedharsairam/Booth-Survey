@@ -31,29 +31,36 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync } = require('child_process');
 const { createWorker } = require('tesseract.js');
 const { detect, readGray } = require('./grid.js');
-const { readGray: rg } = require('./grid.js');
 const { renderLine, LOOK } = require('./house.js');
+const { pagePng } = require('./layout.js');
 const { textLines } = require('./card.js');
 const { parseLine } = require('./cardread.js');
-const { splitAt } = require('./glyphs.js');
+const { luhnValid } = require('./epic.js');
 const { reconcile } = require('./reconcile.js');
 const F = require('./fields.js');
 
 const clean = (s) => s.replace(/\s+/g, '');
 
-// Renders a PDF page to PNG. 300 dpi is well past the point where these glyphs
-// gain detail -- the source is a scan, so more dpi only magnifies interpolation
-// artefacts in the watermark.
-function renderPage(pdf, pageNo, dpi, outPrefix) {
-  execFileSync('pdftoppm', ['-f', String(pageNo), '-l', String(pageNo),
-    '-r', String(dpi), '-png', '-gray', pdf, outPrefix], { maxBuffer: 1 << 30 });
-  const base = `${outPrefix}-${String(pageNo).padStart(2, '0')}`;
-  for (const c of ['', '.png']) if (fs.existsSync(base + c)) return base + c;
-  throw new Error(`pdftoppm produced no file for page ${pageNo}`);
-}
+// Pages come from layout.js's pagePng, which extracts the scan's own pixels.
+//
+// This used to render each page itself, with pdftoppm at 300 dpi, on the reasoning that
+// more resolution must help. Three things were wrong with that:
+//
+//   - The roll's pages are a single JPEG XObject of 1983 x 2806 -- A4 at 240 dpi. Asking
+//     poppler for 300 dpi produces 8263 x 11692, a 4.167x interpolation of the same pixels
+//     carrying no new detail. layout.js says so, in detail, and measures it: grid detection
+//     215 ms native against 2145 ms interpolated, and the serial digits 18 px tall rather
+//     than a smoothed 75.
+//   - Every rectangle this reader recorded -- house_rect among them -- came out in that
+//     interpolated space. Nothing else in the tool works in it. layout.js's pagePng is
+//     1983 px wide; the rects ran to x 7356. So the review sheet cropped off the page, and
+//     build.js and the evaluation harness would have done the same.
+//   - It cost four fifths of the wall clock. The 43-page English run took 90 minutes
+//     rendering pixels that were already on disk in better form.
+//
+// One page image, one coordinate space, and the disk cache that layout.js already keeps.
 
 function rel(card, f) {
   const cw = card.x1 - card.x0, ch = card.y1 - card.y0;
@@ -62,75 +69,195 @@ function rel(card, f) {
   return { x0, y0, w: x1 - x0, h: y1 - y0 };
 }
 
-// serial -- a boxed number, one pass, digits only. Measured 30/30 exact over
-// page 5 at PSM 8 against 21/30 at PSM 7.
-async function readSerial(pagePng, card, worker, tmp, i) {
-  const f = await renderLine(pagePng, rel(card, F.SERIAL), path.join(tmp, `s${i}.png`));
-  const { data } = await worker.recognize(f, F.DIGITS, { text: true });
-  return { serial: clean(data.text).replace(/[^0-9]/g, ''), serial_conf: Math.round(data.confidence) };
-}
-
-// epic -- the voter id, always 3 letters then 7 digits, e.g. "ZZZ9840000".
+// serial -- the roll's own number for the card, printed right-aligned inside a ruled box at
+// the top left.
 //
-// Read as two crops rather than one string. A single whitelist that admits both
-// letters and digits also admits the confusions that matter: reading the whole
-// value as digits turned the prefix's "D" into a "0" and produced eight digits
-// on 2 of 30 cards ("HXD02173334" for ZZZ9840000) off crops that were visibly
-// clean ten-character strings. Truncating the letters to three left a second
-// failure ("HXD24641264"), so the string is cut *geometrically* instead: see
-// glyphs.js. Each half is then read with a whitelist that fits it, which is a
-// problem tesseract is good at.
-async function readEpic(pagePng, card, worker, tmp, i) {
-  const whole = await renderLine(pagePng, rel(card, F.EPIC), path.join(tmp, `e${i}.png`));
-  const img = readGray(whole);
-  const cut = splitAt(img, 10, 3);
-  if (cut === null) return { epic: '', epic_ok: false, epic_reason: 'no ink in the voter-id crop' };
+// Two faults, both found on a full English run and both invisible in the output:
+//
+//   1. The digits touch the box's right-hand rule. On every card measured (30 of 30 on page
+//      3) the serial's ink runs into the rule, so there is no crop that contains the whole
+//      serial and excludes the rule. The old crop included both, and the rule -- a full-height
+//      vertical stroke -- reads as a "1" under a digits-only whitelist. That is where "11"
+//      became "1", and "71" on one card was a genuine serial while its neighbours were not.
+//   2. psm 8 returned the empty string for a single-digit serial. A bare "1" is one narrow
+//      stem with nothing either side of it, which is not the shape psm 8's word model wants.
+//      Measured on five cards: psm 7 and psm 6 read all five, psm 8 missed the single-digit
+//      one entirely. F.DIGITS now uses psm 7.
+//
+// So the rule is found by its shape rather than by its position, exactly as the house field
+// finds its line by its label. A column inked across the full height of the box's interior is
+// a border; a digit stands on the baseline and never reaches the top of the interior, because
+// the interior has headroom above the tallest digit. Cutting the box to the columns that are
+// not borders leaves the digits, whatever their alignment.
+async function readSerial(pagePng, card, pageW, px, worker, tmp, i) {
+  const box = rel(card, F.SERIAL_BOX);
+  const h = box.h;
 
-  // Split the already-normalised image, so `cut` is already in this file's own
-  // coordinates -- no inverse transform needed, and the two halves stay at the
-  // same scale and threshold the cut was measured at.
-  const pre = slice(whole, 0, cut, path.join(tmp, `ep${i}.png`));
-  const dig = slice(whole, cut, img.w, path.join(tmp, `ed${i}.png`));
+  // Column ink within the box, as a fraction of its height.
+  const colFrac = [];
+  for (let x = box.x0; x < box.x0 + box.w; x++) {
+    let n = 0;
+    for (let y = box.y0; y < box.y0 + h; y++) {
+      if (255 - px[y * pageW + x] > 100) n++;
+    }
+    colFrac.push(n / h);
+  }
+  const isRule = (k) => colFrac[k] > 0.85;
 
-  const P = await worker.recognize(pre, F.UPPER, { text: true });
-  const D = await worker.recognize(dig, F.DIGITS, { text: true });
-  const prefix = clean(P.data.text).replace(/[^A-Z]/g, '');
-  const digits = clean(D.data.text).replace(/[^0-9]/g, '');
-  const epic = prefix + digits;
+  // Keep every run of non-rule columns that carries ink. More than one run means something
+  // inside the box is not the serial -- the watermark, or a speck -- so the widest is taken,
+  // which is the one the digits are in because they are the only ink of any size.
+  const runs = [];
+  let cur = null;
+  for (let k = 0; k < colFrac.length; k++) {
+    const ink = !isRule(k) && colFrac[k] > 0;
+    if (ink) {
+      if (!cur) { cur = [k, k]; runs.push(cur); } else cur[1] = k;
+    } else cur = null;
+  }
+  const digitRuns = runs.filter((r) => r[1] - r[0] >= 1);
+  if (!digitRuns.length) {
+    return { serial: '', serial_conf: 0, serial_reason: 'no ink inside the serial box' };
+  }
+  digitRuns.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
+  const [k0, k1] = digitRuns[0];
+
+  // A little margin, so a digit's first column and its last are both inside the crop. The
+  // crop is then trimmed by the renderer, which is safe here -- nothing maps a box back out
+  // of this image, so no inverse transform has to survive.
+  const x0 = Math.max(box.x0, box.x0 + k0 - 3);
+  const x1 = Math.min(box.x0 + box.w, box.x0 + k1 + 4);
+  const rect = { x0, y0: box.y0, w: x1 - x0, h };
+
+  const reads = [];
+  for (const v of SERIAL_VARIANTS) {
+    const f = await renderLine(pagePng, rect, path.join(tmp, `s${i}-${v.scale}-${v.thr}-${v.psm}.png`),
+      v.scale, v.thr, true);
+    const { data } = await worker.recognize(f,
+      { tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: String(v.psm) }, { text: true });
+    reads.push(clean(data.text).replace(/[^0-9]/g, ''));
+  }
+  const tally = new Map();
+  for (const t of reads) tally.set(t, (tally.get(t) || 0) + 1);
+  let serial = '', votes = 0;
+  for (const [t, n] of tally) if (n > votes) { votes = n; serial = t; }
   return {
-    epic, epic_prefix: prefix, epic_digits: digits,
-    epic_ok: /^[A-Z]{3}[0-9]{7}$/.test(epic),
+    serial, serial_conf: votes, serial_reads: reads.length,
+    serial_unanimous: tally.size === 1,
+    serial_alternatives: [...tally.entries()].sort((a, b) => b[1] - a[1]),
   };
 }
 
-// Renders a horizontal slice of an already-cropped image file. The cut lands
-// mid-gap, so no padding is wanted -- padding past the cut pulls a sliver of the
-// next glyph in and the read gains a spurious leading digit.
-function slice(file, x0, x1, out) {
-  const a = Math.max(0, Math.round(x0));
-  const b = Math.min(readGray(file).w, Math.round(x1));
-  execFileSync('convert', [file, '-crop', `${Math.max(8, b - a)}x100000+${a}+0`, '+repage',
-    '-bordercolor', 'white', '-border', '16', out]);
-  return out;
+// The serials differ by digit count and by how close they sit to the box's rule, and no
+// single configuration reads all of them, so the vote is kept. psm 7 leads because it is the
+// only mode that reads a lone digit at all; psm 6 is carried alongside it because it ties on
+// measurement and disagrees differently.
+const SERIAL_VARIANTS = [
+  { scale: 3, thr: 45, psm: 7 }, { scale: 3, thr: 62, psm: 7 }, { scale: 3, thr: 72, psm: 7 },
+  { scale: 2, thr: 62, psm: 7 }, { scale: 3, thr: 62, psm: 6 }, { scale: 2, thr: 62, psm: 6 },
+];
+
+// epic -- the voter id: three letters then seven digits, the last of which is a Luhn check
+// digit. e.g. "ZZZ9840000".
+//
+// Read as one string, and judged by the grammar and the check digit. It used to be cut in
+// half -- three characters, then seven -- and each half read under a whitelist that fitted
+// it, because a single whitelist admitting both letters and digits produced eight-digit
+// strings on 2 of 30 cards on the interpolated render ("HXD02173334" for ZZZ9840000).
+//
+// The cut was worse than the problem it solved. It put the position of the boundary in
+// the hands of splitAt, which merges the crop's ink columns across a gap measured in
+// pixels, so the cut was correct only at the scale where MERGE_GAP was measured. On the
+// scan's native pixels the merge swallowed adjacent characters, the cut landed inside the
+// prefix, and the field went to zero: ten cards that read ZZZ7696263, ZZZ2128494,
+// ZZZ0906107 came back as "W72959", "M11", garbage. A fixed pixel gap is a fixed pixel gap
+// is wrong at every scale it was not measured at, and this document is not the one the
+// constant was measured on.
+//
+// The grammar and the checksum are the better constraint, because they come from the
+// document rather than from the pixels: a wrong read has to be wrong in a way that still
+// yields three letters, seven digits, and a valid checksum to get past them. Measured over
+// 60 single-pass reads of ten cards -- two scales, three segmentation modes -- 60 of 60
+// matched ^[A-Z]{3}[0-9]{7}$ and every card read the same string under all six
+// configurations. The variants are kept so that disagreement is still recorded.
+const EPIC_VARIANTS = [
+  { scale: 3, psm: 7 }, { scale: 2, psm: 7 }, { scale: 3, psm: 8 }, { scale: 3, psm: 13 },
+];
+const ALNUM = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+async function readEpic(pagePng, card, worker, tmp, i) {
+  const reads = [];
+  for (const v of EPIC_VARIANTS) {
+    const f = await renderLine(pagePng, rel(card, F.EPIC),
+      path.join(tmp, `e${i}-${v.scale}-${v.psm}.png`), v.scale, 62);
+    const { data } = await worker.recognize(f,
+      { tessedit_char_whitelist: ALNUM, tessedit_pageseg_mode: String(v.psm) }, { text: true });
+    reads.push(clean(data.text).replace(/[^A-Za-z0-9]/g, '').toUpperCase());
+  }
+  const tally = new Map();
+  for (const t of reads) tally.set(t, (tally.get(t) || 0) + 1);
+  let epic = '', votes = 0;
+  for (const [t, n] of tally) if (n > votes) { votes = n; epic = t; }
+
+  const m = /^([A-Z]{3})([0-9]{7})$/.exec(epic);
+  if (!m) {
+    return { epic, epic_ok: false, epic_reason: 'does not match the voter-id grammar',
+      epic_votes: votes, epic_reads: reads.length, epic_unanimous: tally.size === 1 };
+  }
+  const [, prefix, digits] = m;
+  return {
+    epic, epic_prefix: prefix, epic_digits: digits,
+    epic_ok: luhnValid(digits),
+    epic_reason: luhnValid(digits) ? '' : 'fails the check digit',
+    epic_votes: votes, epic_reads: reads.length, epic_unanimous: tally.size === 1,
+  };
 }
+
+// Renders a horizontal slice of an already-cropped image file. Used to cut the voter id
+// into a letter half and a digit half; see readEpic for why that is gone.
+//
+// glyphs.js keeps its own copy of this idea and epicread.js still needs it, so it was not
+// changed -- only this call site was removed, because a helper whose only caller is gone
+// is not a helper anyone is maintaining.
 
 // house -- located by content, then read several times and voted. See house.js.
 //
-// The vote exists because no single configuration is reliable on this field.
-// The residual errors are shape confusions rather than missing ink -- "95-4-4/3"
-// read as "17-1-15", "96-4-4/4" as "95-6-6/14", "95-4-4/3" as "95-6-6/18" -- and they
-// do not all appear under every configuration. So the variants vary both the
-// preprocessing (threshold sets how much of the watermark's grey survives into
-// black; scale changes how much of each glyph's stem survives thresholding) and
-// the page-segmentation mode, then the majority wins. Disagreement is recorded
-// rather than hidden, so an uncertain card can be flagged for a human -- which
-// matters here because this field decides who counts as one family.
+// The vote exists because no single configuration is reliable on this field, and
+// disagreement is recorded rather than hidden, so an uncertain card can be flagged for a
+// human -- which matters here because this field decides who counts as one family.
+//
+// The page-segmentation mode is not spread evenly across the variants, and that is the
+// whole finding. Measured over 108 configurations (three cards x nine thresholds x four
+// scales) on the roll's own native pixels:
+//
+//     value          psm 6   psm 7   psm 8   psm 13
+//     97-3-3/1         24/27   24/27    7/27     7/27
+//     90-7-7/5           14/27   14/27    9/27     9/27
+//     95-6-6/1            8/27    8/27    5/27     5/27
+//
+// psm 6 and psm 7 -- "assume a single uniform block of text" and "assume a single text
+// line" -- are two to three times better than psm 8's "assume a single word" here, and
+// this value is not a word: it is a hyphenated run of digit groups, which psm 8's model
+// fits badly. The set below was seven psm 8 out of nine, so the vote was dominated by the
+// worst mode and returned "M111" and "RIREV" for values it had no business producing.
+//
+// These counts were taken after the page render was corrected to the scan's native pixels.
+// Before that correction every variant ran on a 4.167x interpolation, so the measurements
+// that chose the old set do not describe anything this code now does.
 const HOUSE_VARIANTS = [
-  { scale: 2, thr: 50, psm: 8 }, { scale: 2, thr: 58, psm: 8 },
-  { scale: 2, thr: 62, psm: 8 }, { scale: 2, thr: 68, psm: 8 },
-  { scale: 2, thr: 75, psm: 8 }, { scale: 2, thr: 62, psm: 7 },
-  { scale: 2, thr: 62, psm: 13 }, { scale: 3, thr: 62, psm: 8 },
-  { scale: 3, thr: 55, psm: 8 },
+  // psm 7 -- one text line, and the mode the label locator's own read already uses.
+  { scale: 3, thr: 45, psm: 7 }, { scale: 3, thr: 50, psm: 7 },
+  { scale: 3, thr: 62, psm: 7 }, { scale: 3, thr: 72, psm: 7 },
+  { scale: 2, thr: 62, psm: 7 },
+  // psm 6 -- one block. Ties with psm 7 on all three cards and reads differently enough
+  // to be worth carrying: where the two agree the value is solid, and where they do not,
+  // the card is one worth a person's eye.
+  { scale: 3, thr: 45, psm: 6 }, { scale: 3, thr: 62, psm: 6 },
+  { scale: 2, thr: 62, psm: 6 },
+  // Two psm 8 reads, kept so the vote's failure modes are not homogeneous. psm 8 is the
+  // mode that invents letters, and seeing where it disagrees is what separates a merely
+  // uncertain card from a legible one. Two, not seven.
+  { scale: 3, thr: 62, psm: 8 }, { scale: 3, thr: 50, psm: 8 },
 ];
 
 // house -- located by its label, then voted over several readings. See house.js.
@@ -268,7 +395,7 @@ async function readHouseVoted(pagePng, card, pageW, px, worker, tmp, i) {
 // neighbours, which costs nothing to derive.
 async function readCard(pagePng, pageW, px, worker, tmp, card, i, page) {
   const rec = { page, idx: i };
-  Object.assign(rec, await readSerial(pagePng, card, worker, tmp, i));
+  Object.assign(rec, await readSerial(pagePng, card, pageW, px, worker, tmp, i));
   Object.assign(rec, await readEpic(pagePng, card, worker, tmp, i));
   Object.assign(rec, await readHouseVoted(pagePng, card, pageW, px, worker, tmp, i));
   return rec;
@@ -277,8 +404,7 @@ async function readCard(pagePng, pageW, px, worker, tmp, card, i, page) {
 async function main() {
   const pdf = process.argv[2];
   const pages = process.argv[3].split(',').map(Number);
-  const dpi = Number(process.argv[4] || 300);
-  const nWorkers = Number(process.argv[5] || 6);
+  const nWorkers = Number(process.argv[4] || 6);
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rollocr-'));
   const workers = [];
@@ -295,12 +421,12 @@ async function main() {
   const all = [];
   try {
     for (const p of pages) {
-      const png = renderPage(pdf, p, dpi, path.join(tmp, 'pg'));
+      const png = pagePng(pdf, p);
       const g = detect(png);
       // The label-based house locator needs the page's grayscale pixels to find the ink
       // bands in the card's text column. Read once per page rather than once per card:
       // the page image is shared by every card on it, and this is a whole-page read.
-      const page = rg(png);
+      const page = readGray(png);
       // Pages are not all full. The roll is printed in parts, and each part ends on a
         // partial page -- page 9 carries "Part Number : 108" and just four cards, serials
         // 177 to 180, with the rest of the sheet blank. Those four are real voters and have
