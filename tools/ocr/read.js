@@ -32,9 +32,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { createWorker } = require('tesseract.js');
-const { detect, readGray } = require('./grid.js');
+const { readGray } = require('./grid.js');
 const { renderLine, LOOK } = require('./house.js');
-const { pagePng } = require('./layout.js');
+const { cardPages } = require('./layout.js');
 const { textLines } = require('./card.js');
 const { parseLine } = require('./cardread.js');
 const { luhnValid } = require('./epic.js');
@@ -42,6 +42,11 @@ const { reconcile } = require('./reconcile.js');
 const F = require('./fields.js');
 
 const clean = (s) => s.replace(/\s+/g, '');
+
+// The roll's last serial, printed on its final card. The positional serial is only
+// trustworthy if the arithmetic over the pages lands here, so this is checked on every run
+// and the run refuses to produce anything if it does not.
+const LAST_SERIAL = 1129;
 
 // Pages come from layout.js's pagePng, which extracts the scan's own pixels.
 //
@@ -388,14 +393,27 @@ async function readHouseVoted(pagePng, card, pageW, px, worker, tmp, i) {
   };
 }
 
-// `page` and `idx` together locate the card on the page, which is what a manual
-// check needs. The serial is recorded alongside, and because the roll prints
-// serials in ascending order, consecutive cards on consecutive pages carry
-// consecutive serials -- so every serial read can be verified against its
-// neighbours, which costs nothing to derive.
-async function readCard(pagePng, pageW, px, worker, tmp, card, i, page) {
-  const rec = { page, idx: i };
-  Object.assign(rec, await readSerial(pagePng, card, pageW, px, worker, tmp, i));
+// `page` and `idx` together locate the card on the page, which is what a manual check needs.
+//
+// The serial is `expected`, derived from where the card sits in the roll. The serial read
+// from the card's ink is kept as `serial_read` beside it, and the two are compared, because
+// that comparison is the only corroboration the positional serial has. It is not redundancy
+// for its own sake: where the two disagree, exactly one of three things is true -- the
+// recogniser merged two 1s, or the recogniser dropped a digit, or the grid put this card in
+// the wrong slot -- and only one of those is a one-line fix. Counting the disagreements and
+// where they fall is what tells them apart.
+async function readCard(pagePng, pageW, px, worker, tmp, card, i, page, expected) {
+  const rec = { page, idx: i, serial: String(expected) };
+  const read = await readSerial(pagePng, card, pageW, px, worker, tmp, i);
+  rec.serial_read = read.serial;
+  rec.serial_conf = read.serial_conf;
+  rec.serial_reads = read.serial_reads;
+  rec.serial_unanimous = read.serial_unanimous;
+  rec.serial_alternatives = read.serial_alternatives;
+  rec.serial_reason = read.serial_reason;
+  // True when the ink agrees with the position. A card where it does not is a card whose
+  // position is worth checking before its other fields are trusted.
+  rec.serial_agrees = read.serial === String(expected);
   Object.assign(rec, await readEpic(pagePng, card, worker, tmp, i));
   Object.assign(rec, await readHouseVoted(pagePng, card, pageW, px, worker, tmp, i));
   return rec;
@@ -419,42 +437,83 @@ async function main() {
   // writing an empty file. Nothing in the output said so.
   const take = (n) => (next < n ? next++ : -1);
   const all = [];
+
+  // The roll's own card list, and the serial each card must carry by position.
+  //
+  // The serial is the join key for everything downstream -- the review sheet, the family
+  // grouping, the booklet -- and reading it from the card's ink was failing: two adjacent
+  // 1s merge into one glyph, so "11" came back "1", "13" came back "3". On page 3 that left
+  // 12 of 30 right, and a sheet labelled by those serials scores the wrong cards.
+  //
+  // The roll does not need to be read to number its own cards. It prints serial 1 on the
+  // first card and counts up without interruption across 43 pages, in three columns by ten
+  // rows, and the parts end on partial pages -- page 9 carries four cards and stops, page 12
+  // twenty-six. So each page's first serial is the sum of the card counts of the pages
+  // before it, which is arithmetic over what the grid detector already found and costs no
+  // recognition at all.
+  //
+  // Two things make that safe, and both are why this uses cardPages rather than a formula:
+  //
+  //   - The card list must be the lattice-completed one. detect() alone misses a card on
+  //     page 13, and every serial after it would then be one short -- silently, and by
+  //     exactly one, which is the hardest kind of wrong to notice. cardPages reads the grid
+  //     through lattice completion, which also sorts the cards into reading order, so index
+  //     i really is the i-th card on the page.
+  //   - The totals have to land on the roll's own last serial. They do: 43 list pages from
+  //     page 3, 1129 cards, last serial 1129. That check is printed every run rather than
+  //     asserted once, because it is what makes the arithmetic above trustworthy.
+  //
+  // The recognised serial is kept, as serial_read, and compared. It is the only field in this
+  // reader that can corroborate the positional one, so discarding it would throw away the
+  // only evidence that the arithmetic is right -- and where they disagree, the card is
+  // exactly the one worth a person's eye.
+  const lay = cardPages(pdf);
+  const byPage = new Map(lay.pages.map((p) => [p.page, p]));
+  console.error(`  roll: ${lay.pages.length} list pages from page ${lay.firstList}, ${lay.total} cards`);
+  if (lay.total !== LAST_SERIAL) {
+    throw new Error(`the roll's cards total ${lay.total}, but its last serial is ${LAST_SERIAL}. `
+      + 'The positional serial cannot be trusted, so nothing is read rather than everything '
+      + 'is read wrong.');
+  }
+  for (const p of pages) {
+    if (!byPage.has(p)) {
+      throw new Error(`page ${p} is not a list page of this roll. List pages are `
+        + `${lay.pages[0].page}-${lay.pages[lay.pages.length - 1].page}.`);
+    }
+  }
   try {
     for (const p of pages) {
-      const png = pagePng(pdf, p);
-      const g = detect(png);
+      // The card list and the page image both come from the roll's own layout, so the index
+      // used here is the same index the serial is derived from. Taking the cards from a
+      // second detect() call would be a second opinion about which cards exist, and it is
+      // exactly the disagreement that shifts a serial.
+      const { png, cards, first } = byPage.get(p);
       // The label-based house locator needs the page's grayscale pixels to find the ink
       // bands in the card's text column. Read once per page rather than once per card:
       // the page image is shared by every card on it, and this is a whole-page read.
       const page = readGray(png);
+      if (cards.length < 20) {
+        console.error(`  page ${p}: ${cards.length} cards, serials ${first}-${first + cards.length - 1} (partial page, end of a part)`);
+      }
       // Pages are not all full. The roll is printed in parts, and each part ends on a
-        // partial page -- page 9 carries "Part Number : 108" and just four cards, serials
-        // 177 to 180, with the rest of the sheet blank. Those four are real voters and have
-        // to be read, so the floor is one card, not twenty: an earlier version of this guard
-        // refused the page and killed a 43-page run over it.
-        //
-        // What it still refuses is zero. An empty page means the grid detector has lost the
-        // card layout, and every row read after that would be silently wrong, so it is worth
-        // stopping for. A short page is announced rather than treated as an error.
-        if (g.cards.length === 0) {
-          throw new Error(`page ${p}: no cards found, so the grid detector has lost the card
-            layout. Everything read from here would be wrong.`);
-        }
-        if (g.cards.length < 20) {
-          console.error(`  page ${p}: ${g.cards.length} cards (partial page, end of a part)`);
-        }
+      // partial page -- page 9 carries "Part Number : 108" and just four cards, with the rest
+      // of the sheet blank. Those four are real voters and have to be read, so a short page
+      // is announced above rather than refused. An earlier version of this guard rejected any
+      // page without 30 cards and killed a 43-page run on page 9; the next version made zero
+      // cards fatal, which is the right line, because an empty page means the grid detector
+      // has lost the layout and every row after it would be silently wrong.
       next = 0;
       const per = workers.map(() => []);
       await Promise.all(workers.map(async (wk, k) => {
         for (;;) {
-          const i = take(g.cards.length);
+          const i = take(cards.length);
           if (i < 0) break;
-          per[k].push(await readCard(png, page.w, page.px, wk, tmp, g.cards[i], i, p));
+          per[k].push(await readCard(png, page.w, page.px, wk, tmp, cards[i], i, p, first + i));
         }
       }));
       const recs = per.flat().sort((a, b) => a.idx - b.idx);
       all.push(...recs);
-      console.error(`  page ${p}: ${g.cards.length} cards`);
+      console.error(`  page ${p}: ${cards.length} cards`);
     }
   } finally {
     await Promise.all(workers.map((w) => w.terminate()));
