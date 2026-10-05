@@ -12,7 +12,7 @@
 //   node sheet.js <roll.pdf> <run.jsonl> <out.png> [selection]
 //
 //   selection is:
-//     disagree          the cards where the label read and the vote differ -- the sample
+//     disagree          the cards where the two readers differ -- the sample
 //                       that decides which reader to trust, and the cheapest one to score
 //     split             every card whose vote was not unanimous
 //     single            cards whose leading group came out as one digit, the shape whose
@@ -51,13 +51,15 @@ function loadRun(file) {
   return rows.filter((r) => Array.isArray(r.house_rect) && r.house_rect.length === 4);
 }
 
-// The candidates worth putting in front of a reader, in order. The vote's own tally is the
-// evidence; it is shown rather than summarised so that "8 for this, 7 for that" is visible
-// as the marginal call it is.
+// The candidates worth putting in front of a reader, in order. The primary read comes first
+// and is marked, because it is the one the pipeline will print; the vote's variants follow
+// with their counts, so a contested card shows what it was chosen over.
 function candidates(r) {
   const out = [];
-  const labelled = (r.house_labelled || '').replace(/\s+/g, '');
-  if (labelled) out.push([labelled, 'label']);
+  const primary = (r.house || '').replace(/\s+/g, '');
+  if (primary) out.push([primary, 'printed']);
+  const voted = (r.house_voted || '').replace(/\s+/g, '');
+  if (voted && voted !== primary) out.push([voted, 'vote']);
   for (const [t, n] of (Array.isArray(r.house_alternatives) ? r.house_alternatives : [])) {
     if (t && !out.some(([x]) => x === t)) out.push([t, String(n)]);
   }
@@ -78,13 +80,12 @@ function select(rows, spec) {
     return out;
   }
   if (spec === 'single') return rows.filter((r) => r.house_final.split('-')[0].length === 1);
-  // The cards where the label read and the vote disagree. This is the sample that decides
-  // which reader to trust: everywhere they agree, it does not matter which one is used, and
-  // everywhere they disagree is exactly the case that needs a human. Scoring these
-  // settles the question without needing ground truth on the easy majority.
+  // The cards where the two readers disagree. This is the sample that decides anything:
+  // everywhere they agree, it does not matter which one is used, and everywhere they differ
+  // is exactly the case that needs a person. Scoring these settles the choice without needing
+  // ground truth on the easy majority.
   if (spec === 'disagree') {
-    return rows.filter((r) => (r.house_labelled || '').replace(/\s+/g, '')
-      !== (r.house_final || '').replace(/\s+/g, ''));
+    return rows.filter((r) => r.house_agrees === false);
   }
   const want = new Set(spec.split(',').map((s) => s.trim()).filter(Boolean));
   return rows.filter((r) => want.has(String(r.serial)));
@@ -136,9 +137,15 @@ const scratch = (name) => path.join(tmp, `${stamp}-${name}`);
 const head = textStrip(`serial ${r.serial}`, 34, HEAD_H, scratch('h.png'));
   const line = textStrip(mid, 28, MID_H, scratch('m.png'));
   const crop = scratch('c.png');
+  // Resized to *fit* the tile, then padded to it. An earlier version resized to 400% and
+  // then ran -extent, which crops anything wider than the tile: a 276 px crop at 400% is
+  // 1104 px, so 204 px was cut off, 102 each side, which is the leading digit of the house
+  // number. Every tile read "-1-1" where the value is "95-6-6/1", and the pipeline's own
+  // rectangle was fine throughout. -resize WxH without a bang preserves the aspect ratio and
+  // fits inside, so -extent only ever pads.
   execFileSync('convert', [pagePng,
     '-crop', `${Math.round(w)}x${Math.round(h)}+${Math.round(x)}+${Math.round(y)}`, '+repage',
-    '-colorspace', 'Gray', '-resize', '400%',
+    '-colorspace', 'Gray', '-resize', `${TILE_W - 40}x${CROP_H - 20}`,
     '-background', GRAY, '-gravity', 'center', '-extent', `${TILE_W}x${CROP_H}`,
     crop], { stdio: 'ignore' });
 

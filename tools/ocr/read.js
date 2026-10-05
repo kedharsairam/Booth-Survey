@@ -369,6 +369,24 @@ async function locateHouseByLabel(pagePng, card, pageW, px, worker, tmp, i) {
   return { rect: null, value: '', line: '', precise: false };
 }
 
+// house -- read from the printed line, then cross-checked by a vote over the tightened crop.
+//
+// Two readers, and the label line is the primary one. This was not decided on plausibility;
+// the two were scored against 20 magnified crops of the 132 cards where they disagree, and
+// the label line won 16, the vote won 3, and one card was neither reader's answer. The
+// scores and the crops are in score.js, and spotcheck.md says plainly that those 20 readings
+// were made by an agent and are a second opinion.
+//
+// The vote's three wins are why it is kept rather than deleted: it is better on a substituted
+// or invented digit, where the label line read "95-4-4/36" for "95-4-4/3" and "11-2-26/8B" for
+// "90-3-3/4". The label line is better on the leading digit, which is where the vote loses
+// everything -- 81 cards came back with a one-digit leading group against 4 for the label
+// line, because the value's own first two 1s merge into one glyph once the crop is tightened
+// around them and read alone.
+//
+// So: the label line provides the value, the vote provides disagreement. Where they differ
+// the card reaches the review sheet, and `house_agrees` records which reader it went with so
+// a later reader can tell a card that was confidently read from one that was contested.
 async function readHouseVoted(pagePng, card, pageW, px, worker, tmp, i) {
   const loc = await locateHouseByLabel(pagePng, card, pageW, px, worker, tmp, i);
   if (!loc.rect) return { house: '', house_located: false };
@@ -382,11 +400,14 @@ async function readHouseVoted(pagePng, card, pageW, px, worker, tmp, i) {
   }
   const tally = new Map();
   for (const t of reads) tally.set(t, (tally.get(t) || 0) + 1);
-  let house = '', votes = 0;
-  for (const [t, n] of tally) if (n > votes) { votes = n; house = t; }
+  let voted = '', votes = 0;
+  for (const [t, n] of tally) if (n > votes) { votes = n; voted = t; }
+
+  const house = loc.value.replace(/\s+/g, '');
   return {
-    house, house_located: true, house_precise: true,
-    house_labelled: loc.value,
+    house, house_located: true, house_precise: loc.precise,
+    house_voted: voted,
+    house_agrees: voted === house,
     house_votes: votes, house_reads: reads.length, house_unanimous: tally.size === 1,
     house_alternatives: [...tally.entries()].sort((a, b) => b[1] - a[1]),
     house_rect: [loc.rect.x0, loc.rect.y0, loc.rect.w, loc.rect.h],
