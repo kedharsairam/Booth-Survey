@@ -131,7 +131,7 @@ async function main() {
   // Voter id policy
 // ---------------
 // Two independent readers, each with a different failure mode. Tesseract invents characters
-// -- "ZZZ1173061" comes back as "WQQO0062950". The template matcher over-segments glyphs,
+// -- "ZZZ9951849" comes back as "WQQO0062950". The template matcher over-segments glyphs,
 // and when the nearest reading at every position fails the check digit, widening the search
 // produces a dozen readings that satisfy it, among which the cheapest is not reliably right:
 // on serial 11 it chose ZZZ7746399 over ZZZ5302955, confusing 8 for 0.

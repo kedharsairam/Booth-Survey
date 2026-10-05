@@ -82,14 +82,14 @@ class BoothImporterTest {
         // different serials. Matching on serial would attach person 1's phone number to
         // whichever person now holds serial 1.
         val booth = existing(
-            voter(1, "ZZZ7696263", "HEMA", "10-1-1", phone = "9848012345"),
-            voter(2, "ZZZ7628720", "SAI", "10-1-2", phone = "9876543210"),
+            voter(1, "ZZZ9818485", "HEMA", "10-1-1", phone = "9848012345"),
+            voter(2, "ZZZ4395497", "SAI", "10-1-2", phone = "9876543210"),
         )
         val out = BoothImporter.merge(
             booth, meta(),
             listOf(
-                row(500, "ZZZ7696263", "HEMA", "10-1-1"),
-                row(501, "ZZZ7628720", "SAI", "10-1-2"),
+                row(500, "ZZZ9818485", "HEMA", "10-1-1"),
+                row(501, "ZZZ4395497", "SAI", "10-1-2"),
             ),
             100L,
         )

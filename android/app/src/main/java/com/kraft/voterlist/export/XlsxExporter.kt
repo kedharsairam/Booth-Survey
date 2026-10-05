@@ -21,7 +21,7 @@ import java.util.zip.ZipOutputStream
  * and Excel all will. Quoting does not prevent it, and a leading apostrophe becomes part
  * of the value. Storing the cell as a text type in the file removes the guesswork
  * altogether. Every identifier-looking value is written as text for the same reason: a
- * door number like "98-3-3/2" and a voter ID like "ZZZ7696263" are both things a spreadsheet
+ * door number like "98-3-3/2" and a voter ID like "ZZZ9818485" are both things a spreadsheet
  * is entitled to reinterpret, and both are join keys once this sheet is merged with anything
  * else.
  *

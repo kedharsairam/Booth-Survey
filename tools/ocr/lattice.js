@@ -6,7 +6,7 @@
 // left edges at x 47, 680, 1314 and row top edges 264 px apart -- and detect() finds
 // them by looking for printed ink. That misses a card whose ink does not look like the
 // rest. It has: English page 13 row 9 column 0 carries a card (serial 291, voter id
-// ZZZ3562477, house 91-3-3/5) that detect() returns nothing for. That single card is
+// ZZZ7906811, house 91-3-3/5) that detect() returns nothing for. That single card is
 // the whole 1128-versus-1129 discrepancy between the two rolls.
 //
 // Filling lattice slots is the right repair rather than loosening detect()'s

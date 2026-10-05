@@ -4,8 +4,8 @@
 // ----------------------
 // Tesseract inserts characters into these ids. On a three-page sample it read 62 of 86
 // as well-formed and check-digit-valid; the failures were not near misses but invented
-// characters -- ZZZ1173061 came back as WQQO0062950, ZZZ4930160 as WTST000012,
-// ZZZ1530104 as HXD246412156. The crops were clean; the segmentation was not. This is
+// characters -- ZZZ9951849 came back as WQQO0062950, ZZZ7263494 as WZZZ7263494,
+// ZZZ5974548 as HXD246412156. The crops were clean; the segmentation was not. This is
 // the same over-segmentation that capped the serial field at 29 of 30, and template
 // matching fixed it there, so it is applied here rather than re-tuned around.
 //

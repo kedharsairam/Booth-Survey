@@ -239,14 +239,14 @@ class ExportTest {
         // does; storing the cell as a text type in the file removes the guesswork.
         val b = booth(
             listOf(
-                Voter(id = "a", serial = 1, name = "A", house = "93-4-4/1", voterId = "ZZZ7696263"),
+                Voter(id = "a", serial = 1, name = "A", house = "93-4-4/1", voterId = "ZZZ9818485"),
                 Voter(id = "b", serial = 2, name = "B", house = "10-1-5", voterId = "ABC1234567"),
             )
         )
         val bytes = java.io.ByteArrayOutputStream()
             .also { out -> XlsxExporter.write(out, b, Lists()) }.toByteArray()
         val sheet = zipPart(bytes, "xl/worksheets/sheet1.xml")
-        for (value in listOf("93-4-4/1", "10-1-5", "ZZZ7696263", "ABC1234567")) {
+        for (value in listOf("93-4-4/1", "10-1-5", "ZZZ9818485", "ABC1234567")) {
             assertTrue(
                 "$value is not stored as an inline string",
                 sheet.contains(Regex("<c r=\"[A-Z]+\\d+\" t=\"inlineStr\"><is><t[^>]*>" + Regex.escape(value) + "</t>")),

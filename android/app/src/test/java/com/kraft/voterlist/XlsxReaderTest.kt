@@ -85,15 +85,15 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("serial", "voter id", "name", "house number"),
-                    listOf("1", "ZZZ7696263", "HEMA SRI", "96-3-3/5"),
-                    listOf("2", "ZZZ7628720", "SAI LAVANYA", "94-2-2/4"),
+                    listOf("1", "ZZZ9818485", "HEMA SRI", "96-3-3/5"),
+                    listOf("2", "ZZZ4395497", "SAI LAVANYA", "94-2-2/4"),
                 )
             )
         )
         assertTrue(r.missingColumns.isEmpty())
         assertEquals(2, r.rows.size)
         assertEquals(1, r.rows[0].serial)
-        assertEquals("ZZZ7696263", r.rows[0].voterId)
+        assertEquals("ZZZ9818485", r.rows[0].voterId)
         assertEquals("HEMA SRI", r.rows[0].name)
         assertEquals("96-3-3/5", r.rows[0].house)
         assertEquals("SAI LAVANYA", r.rows[1].name)
@@ -108,14 +108,14 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("name", "serial", "voter_id", "remarks", "house_no"),
-                    listOf("HEMA SRI", "7", "ZZZ7696263", "x", "96-3-3/5"),
+                    listOf("HEMA SRI", "7", "ZZZ9818485", "x", "96-3-3/5"),
                 )
             )
         )
         assertTrue(r.missingColumns.isEmpty())
         assertEquals(1, r.rows.size)
         assertEquals(7, r.rows[0].serial)
-        assertEquals("ZZZ7696263", r.rows[0].voterId)
+        assertEquals("ZZZ9818485", r.rows[0].voterId)
         assertEquals("HEMA SRI", r.rows[0].name)
         assertEquals("96-3-3/5", r.rows[0].house)
     }
@@ -127,12 +127,12 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("Serial", "VOTER_ID", "Name", "Door No."),
-                    listOf("1", "ZZZ7696263", "A", "10-1-1"),
+                    listOf("1", "ZZZ9818485", "A", "10-1-1"),
                 )
             )
         )
         assertTrue(r.missingColumns.isEmpty())
-        assertEquals("ZZZ7696263", r.rows[0].voterId)
+        assertEquals("ZZZ9818485", r.rows[0].voterId)
         assertEquals("10-1-1", r.rows[0].house)
     }
 
@@ -160,13 +160,13 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("serial", "voter id", "name", "house number"),
-                    listOf("1", "ZZZ7696263", "HEMA SRI", "96-3-3/5"),
+                    listOf("1", "ZZZ9818485", "HEMA SRI", "96-3-3/5"),
                 ),
                 useSharedStrings = false,
             )
         )
         assertTrue(r.missingColumns.isEmpty())
-        assertEquals("ZZZ7696263", r.rows[0].voterId)
+        assertEquals("ZZZ9818485", r.rows[0].voterId)
     }
 
     @Test
@@ -177,7 +177,7 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("serial", "voter id", "name", "house number"),
-                    listOf("1", "ZZZ7696263", "HEMA SRI", "96-3-3/5"),
+                    listOf("1", "ZZZ9818485", "HEMA SRI", "96-3-3/5"),
                 ),
                 sheetFile = "xl/worksheets/sheet2.xml",
             )
@@ -198,7 +198,7 @@ class XlsxReaderTest {
             "<c r=\"D1\" t=\"inlineStr\"><is><t>house number</t></is></c>" +
             "</row><row r=\"2\">" +
             "<c r=\"A2\"><v>42</v></c>" +
-            "<c r=\"B2\" t=\"inlineStr\"><is><t>ZZZ7696263</t></is></c>" +
+            "<c r=\"B2\" t=\"inlineStr\"><is><t>ZZZ9818485</t></is></c>" +
             "<c r=\"C2\" t=\"inlineStr\"><is><t>HEMA SRI</t></is></c>" +
             "<c r=\"D2\" t=\"inlineStr\"><is><t>96-3-3/5</t></is></c>" +
             "</row></sheetData></worksheet>"

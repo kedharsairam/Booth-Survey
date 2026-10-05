@@ -163,19 +163,19 @@ const SERIAL_VARIANTS = [
 ];
 
 // epic -- the voter id: three letters then seven digits, the last of which is a Luhn check
-// digit. e.g. "ZZZ9840000".
+// digit. e.g. "ZZZ6517775".
 //
 // Read as one string, and judged by the grammar and the check digit. It used to be cut in
 // half -- three characters, then seven -- and each half read under a whitelist that fitted
 // it, because a single whitelist admitting both letters and digits produced eight-digit
-// strings on 2 of 30 cards on the interpolated render ("HXD02173334" for ZZZ9840000).
+// strings on 2 of 30 cards on the interpolated render ("HXD02173334" for ZZZ6517775).
 //
 // The cut was worse than the problem it solved. It put the position of the boundary in
 // the hands of splitAt, which merges the crop's ink columns across a gap measured in
 // pixels, so the cut was correct only at the scale where MERGE_GAP was measured. On the
 // scan's native pixels the merge swallowed adjacent characters, the cut landed inside the
-// prefix, and the field went to zero: ten cards that read ZZZ7696263, ZZZ2128494,
-// ZZZ0906107 came back as "W72959", "M11", garbage. A fixed pixel gap is a fixed pixel gap
+// prefix, and the field went to zero: ten cards that read ZZZ9818485, ZZZ4340618,
+// ZZZ3239431 came back as "W72959", "M11", garbage. A fixed pixel gap is a fixed pixel gap
 // is wrong at every scale it was not measured at, and this document is not the one the
 // constant was measured on.
 //
