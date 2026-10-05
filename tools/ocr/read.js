@@ -403,6 +403,9 @@ async function readHouseVoted(pagePng, card, pageW, px, worker, tmp, i) {
   let voted = '', votes = 0;
   for (const [t, n] of tally) if (n > votes) { votes = n; voted = t; }
 
+  // parseLine already removed the roll's printed prefix and any separator the recogniser
+  // misread, on the way to producing loc.value. Nothing is stripped again here: two places
+  // doing it is how the colon path and the fallback path ended up disagreeing.
   const house = loc.value.replace(/\s+/g, '');
   return {
     house, house_located: true, house_precise: loc.precise,

@@ -74,12 +74,32 @@ function textLines(px, pageW, card) {
     rowInk.push({ y, n, frac: n / (x1 - x0) });
   }
 
-  // A row belongs to a line if it carries more than a trace of ink. The trace of a row
-  // between lines is under one part in a thousand of the column.
+  // A row belongs to a line if it carries ink comparable to the rest of the text.
+  //
+  // The test used to be an absolute one -- a row is a gap if it holds less than a
+  // thousandth of the column's width -- which in practice means "holds zero pixels", because
+  // the column is 447 px wide and a thousandth of it is less than one. One stray pixel of
+  // watermark in the space between two lines was therefore enough to join them, and a joined
+  // band is not two short bands: it is handed to the recogniser as one strip and comes back
+  // as fragments. Measured on serial 1030, whose father's line and house line sit 27 px
+  // apart: the gap between them carries one to three pixels on every row, the band never
+  // closed, and the two lines were recognised together as "ame ee marae" -- so the house
+  // number was not merely unreadable, it was absent, and the card reported a blank.
+  //
+  // The threshold is relative to the ink this card's own text carries. Text rows measure up
+  // to 0.44 of the column's width on that card and the gap rows hold 0.002 to 0.007, so
+  // anything under a tenth of the text level is a gap. Relative rather than absolute because
+  // an absolute figure is only correct for one page's ink density, which is the same mistake
+  // as a field position measured on one document: this roll's watermark is heavier on some
+  // pages than others, and a constant that splits page 3's lines leaves page 42's merged.
+  const nonzero = rowInk.filter((r) => r.frac > 0).map((r) => r.frac).sort((a, b) => a - b);
+  const textLevel = nonzero.length ? nonzero[Math.floor(nonzero.length / 2)] : 0;
+  const gapAt = textLevel > 0 ? textLevel * 0.1 : 0.001;
+
   const bands = [];
   let start = -1;
   for (let i = 0; i < rowInk.length; i++) {
-    const on = rowInk[i].frac > 0.001;
+    const on = rowInk[i].frac >= gapAt;
     if (on && start < 0) start = i;
     if (!on && start >= 0) { bands.push([rowInk[start].y, rowInk[i - 1].y]); start = -1; }
   }

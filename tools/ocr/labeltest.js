@@ -25,7 +25,7 @@
 //
 // Run: node labeltest.js
 
-const { LABEL_RE, LABEL_WORD_RE, FIELD_LABELS } = require('./cardread.js');
+const { LABEL_RE, LABEL_WORD_RE, FIELD_LABELS, stripHousePrefix } = require("./cardread.js");
 
 const fieldOf = (label) => {
   for (const { field, re } of FIELD_LABELS) if (re.test(label)) return field;
@@ -89,6 +89,43 @@ for (const t of RELATION_SPELLINGS) {
   if (!ok) bad++;
   console.log(`    ${JSON.stringify(t).padEnd(20)} -> ${String(got).padEnd(8)}${ok ? '' : '  REACHED name'}`);
 }
+
+  // The house value's own printed prefix. Serial 1123 reads "House Number : D.No 91-6-6/2",
+  // and leaving that on produced "DNO-96-6-6/2" and "DOOR NUMBER 11" in the house field --
+  // which is not untidy but wrong, because the booklet groups households by this value, so a
+  // prefixed and an unprefixed spelling of one door become two households.
+  //
+  // The negatives are as load-bearing as the positives: a value that merely contains "no", or
+  // that starts with digits, must come back untouched.
+  console.log('\n  the house value\'s printed prefix:');
+  const PREFIX_CASES = [
+    ['D.No 91-6-6/2', '91-6-6/2'],
+    ['D No 91-6-6/2', '91-6-6/2'],
+    ['D.No. 91-6-6/2', '91-6-6/2'],
+    ['Door No 91-6-6/2', '91-6-6/2'],
+    ['Door No. 91-6-6/2', '91-6-6/2'],
+    ['Door Number 91-6-6/2', '91-6-6/2'],
+    ['D.No: 91-6-6/2', '91-6-6/2'],
+    ['DNO-96-6-6/2', '96-6-6/2'],
+    // These are the forms the recogniser actually produced on this roll, with the spaces
+    // dropped. Six cards were left with their prefix attached before these were added,
+    // because "o" and "1" have no word boundary between them.
+    ['DNO93-5-5/5', '93-5-5/5'],
+    ['D.No91-6-6/2', '91-6-6/2'],
+    ['DOORNO92-5-5/4,', '92-5-5/4,'],
+    ['DOORNUMBER93-5-5/5', '93-5-5/5'],
+    ['DOORNUMBER92-6-6/3', '92-6-6/3'],
+    ['D.No91-6-6/2', '91-6-6/2'],
+    ['91-6-6/2', '91-6-6/2'],
+    ['96-3-3/5', '96-3-3/5'],
+    ['96-6-6/26/north', '96-6-6/26/north'],
+  ];
+  for (const [text, want] of PREFIX_CASES) {
+    const got = stripHousePrefix(text).value;
+    const ok = got === want;
+    if (!ok) bad++;
+    console.log('    ' + JSON.stringify(text).padEnd(22) + ' -> ' + JSON.stringify(got).padEnd(20) + (ok ? '' : '  WRONG'));
+  }
 
 console.log(bad ? `\n  ${bad} form(s) misroute` : '\n  every form routes to the right field');
 process.exit(bad ? 1 : 0);
