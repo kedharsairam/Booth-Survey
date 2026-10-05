@@ -45,3 +45,8 @@ Thumbs.db
 
 # Kotlin build scratch -- compiler crash logs, not source.
 .kotlin/
+
+# Tool-local dependencies. tools/ocr installs tesseract.js here rather than at the repo
+# root, because the OCR harness is a standalone pipeline and pinning it separately keeps
+# the Android build's Gradle tree untouched.
+tools/ocr/node_modules/

@@ -28,8 +28,17 @@
 // the roll prints "House Number :" with a space before the colon and "Fathers Name:"
 // without.
 const LABELS = [
-  { field: 'house', label: 'House Number' },
-  { field: 'father', label: 'Fathers Name' },
+  // Matched by stem, and longest-first, for the reason given in cardread.js: the label
+  // recogniser cannot spell these. Measured on the English roll, the husband line came out
+  // as 'husban', 'husbanc' or 'husbant' -- the final d lost every time -- so a literal
+  // 'Husbands Name' matches none of them, the line falls through to a bare 'Name' match, and
+  // it overwrites the voter's own name.
+  //
+  // Both relation lines are listed, and both must come before { field: 'name' }: 25 of 86
+  // cards on that roll carried a husband line.
+  { field: 'house', label: 'House' },
+  { field: 'father', label: 'Fathers' },
+  { field: 'father', label: 'Husband' },
   { field: 'name', label: 'Name' },
   { field: 'age', label: 'Age' },
   { field: 'gender', label: 'Gender' },

@@ -36,6 +36,8 @@ const { createWorker } = require('tesseract.js');
 const { detect, readGray } = require('./grid.js');
 const { readGray: rg } = require('./grid.js');
 const { renderLine, LOOK } = require('./house.js');
+const { textLines } = require('./card.js');
+const { parseLine } = require('./cardread.js');
 const { splitAt } = require('./glyphs.js');
 const { reconcile } = require('./reconcile.js');
 const F = require('./fields.js');
@@ -131,11 +133,113 @@ const HOUSE_VARIANTS = [
   { scale: 3, thr: 55, psm: 8 },
 ];
 
-async function readHouseVoted(pagePng, card, worker, tmp, i) {
-  const { cropColumn } = require('./house.js');
-  const loc = await cropColumn(pagePng, card, path.join(tmp, `col${i}.png`), worker);
-  if (!loc.line) return { house: '', house_located: false };
-  if (!loc.rect) return { house: clean(loc.line.text), house_located: true, house_precise: false };
+// house -- located by its label, then voted over several readings. See house.js.
+//
+// The locator is the printed label, not a box. A field's position is a property of one
+// document: the box this used to crop, F.HOUSE_X0..HOUSE_X1 scaled into the card, was
+// measured on the Telugu roll and fitted it. On the English roll the same box was wider
+// than the label it wanted and overlapped the two lines above it, so it returned
+// "mber : 96-3-3/5" with the name and the relation line still in frame. Under the
+// digits-only stage-1 whitelist the letters of those two lines are unreadable, so they
+// collapse to noise -- but the recogniser still returns something for a line it has
+// ink for, and the vote then picks a winner out of noise. That is where the leading
+// groups came from: "A" 106 times, "AA" 33, "TT" 17, "N11" 30, against "11" 606. A
+// leading group of A is not a house number; it is a letter from somebody's name.
+//
+// The fix costs one extra recognition per card and needs no new geometry at all, because
+// the label position is already computed for the name reader: textLines() gives the ink
+// bands in the text column, and the house value is the one whose band parses to the
+// house field. This is the same call the name reader makes on the same crop, so the
+// house read is now anchored to the same evidence as every other field on the card.
+async function locateHouseByLabel(pagePng, card, pageW, px, worker, tmp, i) {
+  const ch = card.y1 - card.y0;
+  const bands = textLines(px, pageW, card);
+
+  // The serial and voter-id readers both leave a digits-only whitelist set on the shared
+  // worker. Left in place it would strip the letters out of "House Number :" and the label
+  // could never be found -- the value would look unreadable while the line is perfectly
+  // clear. This is the same reset the name reader does, for the same reason.
+  await worker.setParameters({ tessedit_char_whitelist: '' });
+
+  const SC = 3;      // the strip is upscaled 300% before recognition
+  const BORDER = 24; // white margin added after the resize, in strip pixels
+
+  for (const band of bands) {
+    const bandRect = rel(card, {
+      x0: 0.015, x1: 0.730,
+      y0: (band.y0 - 3) / ch,
+      y1: (band.y1 + 3) / ch,
+    });
+    if (bandRect.h < 8) continue;
+
+    // No -trim on this crop. The strip is read for its word boxes as much as its text,
+    // and a trimmed crop's origin is shifted by an amount that cannot be recovered from
+    // the arguments -- so a box from a trimmed strip cannot be mapped back onto the page.
+    // Untrimmed, strip pixel (BORDER, BORDER) is page pixel (bandRect.x0, bandRect.y0).
+    const strip = await renderLine(pagePng, bandRect, path.join(tmp, `hl${i}.png`), SC, 62, false);
+    const { data } = await worker.recognize(strip, { tessedit_pageseg_mode: '7' },
+      { text: true, blocks: true });
+    const raw = data.text.replace(/\s+/g, ' ').trim();
+    const hit = parseLine(raw).find((e) => e.field === 'house');
+    if (!hit) continue;
+
+    const words = [];
+    for (const blk of data.blocks || []) {
+      for (const par of blk.paragraphs || []) {
+        for (const ln of par.lines || []) {
+          for (const wd of ln.words || []) words.push({ text: (wd.text || '').trim(), bbox: wd.bbox });
+        }
+      }
+    }
+
+    // The value starts after the label, not at the label. Returning the label along with
+    // it is what turned every house number on the first pass into "HN96-3-3/5" -- "HN" is
+    // not a house number, it is the first two letters of the word that was sitting there.
+    //
+    // Which word is the value is taken by matching the words against the value parseLine
+    // already extracted, rather than by counting characters. Counting is what it looked
+    // like at first and it clipped the leading "1" off 9 cards in 34: tesseract's word
+    // list and its text output do not always join the same way, so an offset computed from
+    // the string lands one or two characters off the box. Matching the value's own text to
+    // a word needs them to agree about *which* token, which they do.
+    const squash = (s) => s.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+    const want = squash(hit.value);
+    const toPageX = (X) => bandRect.x0 + (X - BORDER) / SC;
+    let vx = null;
+    for (const w of words) {
+      const got = squash(w.text);
+      if (!got || !w.bbox) continue;
+      // A word that begins the value is its first word. Prefixes are allowed because the
+      // recogniser sometimes splits the value itself -- "96-3-3/5" as "10" and "1-3/1" --
+      // and the first piece is still where the value begins.
+      if (want.startsWith(got)) {
+        vx = Math.round(toPageX(w.bbox.x0));
+        break;
+      }
+    }
+
+    // No word box to work from: the label is left out by construction, which is right but
+    // less precise, and is recorded so the caller can tell the two apart.
+    if (vx === null) {
+      return { rect: { ...bandRect }, value: hit.value, line: raw, precise: false };
+    }
+    // Keep a little of the space to the left of the first value glyph. Cutting exactly at
+    // its edge clips the left stem of a digit like 1 on some renderings.
+    const x0 = Math.max(bandRect.x0, vx - 8);
+    if (bandRect.x0 + bandRect.w - x0 < 12) {
+      return { rect: { ...bandRect }, value: hit.value, line: raw, precise: false };
+    }
+    return {
+      rect: { x0, y0: bandRect.y0, w: bandRect.x0 + bandRect.w - x0, h: bandRect.h },
+      value: hit.value, line: raw, precise: true,
+    };
+  }
+  return { rect: null, value: '', line: '', precise: false };
+}
+
+async function readHouseVoted(pagePng, card, pageW, px, worker, tmp, i) {
+  const loc = await locateHouseByLabel(pagePng, card, pageW, px, worker, tmp, i);
+  if (!loc.rect) return { house: '', house_located: false };
 
   const reads = [];
   for (const v of HOUSE_VARIANTS) {
@@ -150,6 +254,7 @@ async function readHouseVoted(pagePng, card, worker, tmp, i) {
   for (const [t, n] of tally) if (n > votes) { votes = n; house = t; }
   return {
     house, house_located: true, house_precise: true,
+    house_labelled: loc.value,
     house_votes: votes, house_reads: reads.length, house_unanimous: tally.size === 1,
     house_alternatives: [...tally.entries()].sort((a, b) => b[1] - a[1]),
     house_rect: [loc.rect.x0, loc.rect.y0, loc.rect.w, loc.rect.h],
@@ -158,14 +263,14 @@ async function readHouseVoted(pagePng, card, worker, tmp, i) {
 
 // `page` and `idx` together locate the card on the page, which is what a manual
 // check needs. The serial is recorded alongside, and because the roll prints
-// serials in ascending order, the expected value for card i of page p is
-// (p - FIRST_LIST_PAGE) * 30 + 1 + i -- so every serial read can be verified
-// against ground truth that costs nothing to derive.
-async function readCard(pagePng, worker, tmp, card, i, page) {
+// serials in ascending order, consecutive cards on consecutive pages carry
+// consecutive serials -- so every serial read can be verified against its
+// neighbours, which costs nothing to derive.
+async function readCard(pagePng, pageW, px, worker, tmp, card, i, page) {
   const rec = { page, idx: i };
   Object.assign(rec, await readSerial(pagePng, card, worker, tmp, i));
   Object.assign(rec, await readEpic(pagePng, card, worker, tmp, i));
-  Object.assign(rec, await readHouseVoted(pagePng, card, worker, tmp, i));
+  Object.assign(rec, await readHouseVoted(pagePng, card, pageW, px, worker, tmp, i));
   return rec;
 }
 
@@ -179,25 +284,51 @@ async function main() {
   const workers = [];
   for (let i = 0; i < nWorkers; i++) workers.push(await createWorker('eng'));
   let next = 0;
-  const take = () => (next < 30 ? next++ : -1);
+  // Takes the next unclaimed card index on this page, or -1 when they are all claimed.
+  // The limit is the page's own card count, not a constant: the English roll lays out 26
+  // cards on some pages and 30 on others, so a hardcoded 30 handed out indices past the end
+  // of the array and crashed the run partway through.
+  // Called with this page's card count. A bare take() here made `next < undefined` false,
+  // so every worker gave up immediately and the run reported forty-three pages read while
+  // writing an empty file. Nothing in the output said so.
+  const take = (n) => (next < n ? next++ : -1);
   const all = [];
   try {
     for (const p of pages) {
       const png = renderPage(pdf, p, dpi, path.join(tmp, 'pg'));
       const g = detect(png);
-      if (g.cards.length !== 30) throw new Error(`page ${p}: expected 30 cards, got ${g.cards.length}`);
+      // The label-based house locator needs the page's grayscale pixels to find the ink
+      // bands in the card's text column. Read once per page rather than once per card:
+      // the page image is shared by every card on it, and this is a whole-page read.
+      const page = rg(png);
+      // Pages are not all full. The roll is printed in parts, and each part ends on a
+        // partial page -- page 9 carries "Part Number : 108" and just four cards, serials
+        // 177 to 180, with the rest of the sheet blank. Those four are real voters and have
+        // to be read, so the floor is one card, not twenty: an earlier version of this guard
+        // refused the page and killed a 43-page run over it.
+        //
+        // What it still refuses is zero. An empty page means the grid detector has lost the
+        // card layout, and every row read after that would be silently wrong, so it is worth
+        // stopping for. A short page is announced rather than treated as an error.
+        if (g.cards.length === 0) {
+          throw new Error(`page ${p}: no cards found, so the grid detector has lost the card
+            layout. Everything read from here would be wrong.`);
+        }
+        if (g.cards.length < 20) {
+          console.error(`  page ${p}: ${g.cards.length} cards (partial page, end of a part)`);
+        }
       next = 0;
       const per = workers.map(() => []);
       await Promise.all(workers.map(async (wk, k) => {
         for (;;) {
-          const i = take();
+          const i = take(g.cards.length);
           if (i < 0) break;
-          per[k].push(await readCard(png, wk, tmp, g.cards[i], i, p));
+          per[k].push(await readCard(png, page.w, page.px, wk, tmp, g.cards[i], i, p));
         }
       }));
       const recs = per.flat().sort((a, b) => a.idx - b.idx);
       all.push(...recs);
-      console.error(`  page ${p}: 30 cards`);
+      console.error(`  page ${p}: ${g.cards.length} cards`);
     }
   } finally {
     await Promise.all(workers.map((w) => w.terminate()));
