@@ -49,4 +49,11 @@ Thumbs.db
 # Tool-local dependencies. tools/ocr installs tesseract.js here rather than at the repo
 # root, because the OCR harness is a standalone pipeline and pinning it separately keeps
 # the Android build's Gradle tree untouched.
-tools/ocr/node_modules/
+#
+# Matched as a plain name and as the symlink itself, not only as a directory. On this machine
+# tools/ocr/node_modules is a symlink to the other checkout's, and a trailing-slash rule does
+# not match a symlink -- git says "beyond a symbolic link" and then helpfully lists it as an
+# untracked file in every status, which is the exact moment a 200 MB dependency tree gets
+# committed by accident.
+node_modules/
+tools/ocr/node_modules
