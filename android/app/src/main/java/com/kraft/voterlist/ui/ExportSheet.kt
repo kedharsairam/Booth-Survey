@@ -10,6 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kraft.ui.tokens.KraftSpacing
+import com.kraft.ui.tokens.KraftTypeScale
 
 /**
  * Offers the two exports.
@@ -36,19 +38,19 @@ fun ExportSheet(
     val pending = s.totalCount - s.doneCount
 
     ModalBottomSheet(onDismissRequest = onClose) {
-        Column(Modifier.padding(20.dp).fillMaxWidth()) {
+        Column(Modifier.padding(KraftSpacing.Spacing20).fillMaxWidth()) {
             // Named, because the app can hold several booths and this writes a file. "Export"
             // on its own leaves you wondering which booth the 76 pages are for -- and getting
             // that wrong means printing the wrong street's booklet.
             Text(
                 if (s.hasBooth) "Export ${s.booth.displayTitle}" else "Export",
-                fontSize = 18.sp,
+                fontSize = KraftTypeScale.Body,
             )
             Text(
                 "Choose where to save it.",
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = KraftTypeScale.Caption1, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(KraftSpacing.Spacing16))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = onlyPending, onCheckedChange = { onlyPending = it })
@@ -56,44 +58,44 @@ fun ExportSheet(
                     Text("People still to visit only")
                     Text(
                         "$pending of ${s.totalCount} still to do",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = KraftTypeScale.Caption1, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(KraftSpacing.Spacing8))
             Button(
                 onClick = { onExportPdf(onlyPending); onClose() },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.PictureAsPdf, null)
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(KraftSpacing.Spacing8))
                 Text("Booklet (PDF, A4 landscape)")
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(KraftSpacing.Spacing6))
             Text(
                 "The MLA's form, four pages to a booklet, folded and stapled.",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = KraftTypeScale.Caption2, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(KraftSpacing.Spacing16))
             OutlinedButton(
                 onClick = { onExportXlsx(onlyPending); onClose() },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.TableChart, null)
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(KraftSpacing.Spacing8))
                 Text("Spreadsheet (Excel)")
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(KraftSpacing.Spacing6))
             Text(
                 "Every field, with door numbers and names stored as text so a spreadsheet " +
                     "cannot reinterpret \"98-3-3/2\" as a date.",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = KraftTypeScale.Caption2, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(KraftSpacing.Spacing24))
         }
     }
 }

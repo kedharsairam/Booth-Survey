@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.kraft.voterlist.data.NATURAL_HOUSE_ORDER
 import com.kraft.voterlist.data.Voter
+import com.kraft.ui.tokens.KraftSpacing
 
 /**
  * The families that exist, in the order they will print.
@@ -243,7 +244,7 @@ fun FamilyEditScreen(vm: SurveyViewModel, s: UiState) {
 
             FilledTonalButton(
                 onClick = { vm.openPicker() },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier.fillMaxWidth().height(BoothMetrics.FieldHeight),
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Icon(Icons.Default.Add, null)
@@ -343,7 +344,7 @@ private fun MemberRow(
             position.toString(),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(28.dp),
+            modifier = Modifier.width(KraftSpacing.Spacing24),
         )
         Column(
             Modifier
@@ -380,18 +381,18 @@ private fun MemberRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        IconButton(onClick = onUp, enabled = !first, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = onUp, enabled = !first, modifier = Modifier.size(KraftSpacing.Spacing48)) {
             Icon(Icons.Default.KeyboardArrowUp, "Move ${m.name} up")
         }
-        IconButton(onClick = onDown, enabled = !last, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = onDown, enabled = !last, modifier = Modifier.size(KraftSpacing.Spacing48)) {
             Icon(Icons.Default.KeyboardArrowDown, "Move ${m.name} down")
         }
-        IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = onRemove, modifier = Modifier.size(KraftSpacing.Spacing48)) {
             Icon(
                 Icons.Default.PersonRemove,
                 "Take ${m.name} out of this family",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(KraftSpacing.Spacing20),
             )
         }
     }
@@ -457,7 +458,7 @@ fun MemberPicker(
                 )
                 Spacer(Modifier.height(Space.sm))
                 LazyColumn(
-                    Modifier.height(340.dp),
+                    Modifier.height(BoothMetrics.FamilyListHeight),
                     contentPadding = PaddingValues(bottom = Space.xs),
                 ) {
                     items(candidates.take(150), key = { it.id }) { v ->

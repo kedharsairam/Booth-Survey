@@ -45,3 +45,7 @@ Thumbs.db
 
 # Kotlin build scratch -- compiler crash logs, not source.
 .kotlin/
+# Local foundation checkout for the composite build. Public code, safe inside
+# a private repo — dependencies flow inward only. CI checks this out beside
+# the repo root; developers clone it here so ../kraft-foundation resolves.
+kraft-foundation/

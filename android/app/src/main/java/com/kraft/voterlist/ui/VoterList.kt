@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kraft.voterlist.data.Voter
+import com.kraft.ui.tokens.KraftSpacing
 
 /**
  * Every voter, in serial order.
@@ -265,7 +266,7 @@ private fun VoterRow(
                 Icons.Default.DeleteOutline,
                 "Remove ${v.name.ifBlank { "voter" }}",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(KraftSpacing.Spacing20),
             )
         }
     }

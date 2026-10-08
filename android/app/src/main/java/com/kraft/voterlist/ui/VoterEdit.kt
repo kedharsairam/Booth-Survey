@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.kraft.voterlist.data.Lists
+import com.kraft.ui.tokens.KraftSpacing
 
 /**
  * One voter. Every field editable, including the serial and the voter ID.
@@ -79,7 +80,7 @@ fun VoterEditScreen(vm: SurveyViewModel, s: UiState) {
             if (s.creatingVoter) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 3.dp,
+                    tonalElevation = 3.dp, // @kraft-lint-ignore spacing.no-raw-dp, spacing.rhythm — card tonal elevation, no shared token
                     // Lifted above the keyboard. A Scaffold does not do this by default, and a
                     // pinned action sitting behind the IME is worse than one at the bottom of a
                     // scroll: it looks present and cannot be pressed.
@@ -88,7 +89,7 @@ fun VoterEditScreen(vm: SurveyViewModel, s: UiState) {
                     Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
                         Button(
                             onClick = { vm.confirmCreateVoter() },
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            modifier = Modifier.fillMaxWidth().height(BoothMetrics.FieldHeight),
                             shape = MaterialTheme.shapes.medium,
                         ) {
                             Icon(Icons.Default.Add, null)
@@ -183,14 +184,14 @@ fun VoterEditScreen(vm: SurveyViewModel, s: UiState) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.md), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = { vm.toggleVisited() },
-                        modifier = Modifier.weight(1f).height(52.dp),
+                        modifier = Modifier.weight(1f).height(BoothMetrics.FieldHeight),
                         shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(if (v.visited) "Visited" else "Mark visited")
                     }
                     OutlinedButton(
                         onClick = { vm.toggleSkipped() },
-                        modifier = Modifier.weight(1f).height(52.dp),
+                        modifier = Modifier.weight(1f).height(BoothMetrics.FieldHeight),
                         shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(if (v.skipped) "Skipped" else "Skip")

@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.kraft.ui.tokens.KraftSpacing
 
 /**
  * Importing a booth, as its own screen.
@@ -252,7 +253,7 @@ private fun DetailsStep(
                     else vm.confirmImport(boothNo, mandal, ward, label)
                 },
                 enabled = boothNo.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier.fillMaxWidth().height(BoothMetrics.FieldHeight),
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Text(if (clash != null) "Update Booth ${clash.boothNo}" else "Import")

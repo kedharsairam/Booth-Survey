@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.items
 import com.kraft.voterlist.data.Voter
+import com.kraft.ui.tokens.KraftSpacing
 
 /**
  * Home: what the numbers are, and the two things you came to do.
@@ -105,7 +106,7 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                     // screen -- "New family" and "New voter" ended up below the fold and
                     // unreachable. weight(1f) is wrong for the same reason in the other
                     // direction: in landscape "whatever is left over" was nothing.
-                    Modifier.fillMaxWidth().heightIn(min = 152.dp),
+                    Modifier.fillMaxWidth().heightIn(min = BoothMetrics.HomeCardMin),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
@@ -161,7 +162,7 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                 ActionButton(
                     label = "New family",
                     caption = "Group the people at one house",
-                    icon = { Icon(Icons.Default.GroupAdd, null, Modifier.size(22.dp)) },
+                    icon = { Icon(Icons.Default.GroupAdd, null, Modifier.size(KraftSpacing.Spacing20)) },
                     onClick = { vm.createFamily() },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -169,7 +170,7 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                 ActionButton(
                     label = "New voter",
                     caption = "Someone who is not in the list",
-                    icon = { Icon(Icons.Default.PersonAdd, null, Modifier.size(22.dp)) },
+                    icon = { Icon(Icons.Default.PersonAdd, null, Modifier.size(KraftSpacing.Spacing20)) },
                     onClick = { vm.startCreateVoter() },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -262,7 +263,7 @@ internal fun ActionButton(
 ) {
     Card(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 64.dp),
+        modifier = modifier.heightIn(min = KraftSpacing.Spacing64),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = MaterialTheme.shapes.large,
     ) {
@@ -270,7 +271,7 @@ internal fun ActionButton(
             Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(KraftSpacing.Spacing40), contentAlignment = Alignment.Center) {
                 androidx.compose.runtime.CompositionLocalProvider(
                     androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onPrimaryContainer,
                 ) { icon() }
@@ -364,7 +365,7 @@ internal fun StatusChip(label: String, colour: androidx.compose.ui.graphics.Colo
     Surface(color = colour, shape = MaterialTheme.shapes.extraSmall) {
         Text(
             label,
-            Modifier.padding(horizontal = Space.sm, vertical = 3.dp),
+            Modifier.padding(horizontal = Space.sm, vertical = KraftSpacing.Spacing4),
             style = MaterialTheme.typography.labelSmall,
             color = Status.onStatus,
         )
@@ -383,7 +384,7 @@ internal fun DupBadge() {
     Surface(color = Status.bad, shape = MaterialTheme.shapes.extraSmall) {
         Text(
             "DUPLICATE",
-            Modifier.padding(horizontal = Space.xs + 1.dp, vertical = 2.dp),
+            Modifier.padding(horizontal = Space.xs + KraftSpacing.BorderWidth, vertical = KraftSpacing.Spacing2),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = Status.onStatus,

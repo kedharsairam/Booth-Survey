@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kraft.voterlist.data.Lists
+import com.kraft.ui.tokens.KraftSpacing
 
 /**
  * The three vocabularies, and nothing else.
@@ -147,12 +148,12 @@ private fun ListEditor(vm: SurveyViewModel, s: UiState, kind: Lists.Kind) {
                                 )
                             }
                         }
-                        IconButton(onClick = { removing = value }, modifier = Modifier.size(48.dp)) {
+                        IconButton(onClick = { removing = value }, modifier = Modifier.size(KraftSpacing.Spacing48)) {
                             Icon(
                                 Icons.Default.DeleteOutline,
                                 "Remove $value",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(KraftSpacing.Spacing20),
                             )
                         }
                     }
@@ -175,20 +176,20 @@ private fun ListEditor(vm: SurveyViewModel, s: UiState, kind: Lists.Kind) {
                     IconButton(
                         onClick = { vm.addListValue(kind, text); text = ""; adding = false },
                         enabled = text.isNotBlank(),
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(KraftSpacing.Spacing48),
                     ) {
                         Icon(Icons.Default.Check, "Add", tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(
                         onClick = { adding = false; text = "" },
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(KraftSpacing.Spacing48),
                     ) {
                         Icon(Icons.Default.Close, "Cancel", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
                 TextButton(onClick = { adding = true }) {
-                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                    Icon(Icons.Default.Add, null, Modifier.size(KraftSpacing.Spacing16))
                     Spacer(Modifier.width(Space.xs))
                     Text("Add one", fontWeight = FontWeight.SemiBold)
                 }

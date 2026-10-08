@@ -125,6 +125,24 @@ Forty-six tests, concentrated on the things that quietly corrupt data:
 - door numbers and voter IDs stay text in the spreadsheet
 - the template the app writes is one the app can read back
 
+## Design
+
+Spacing, type, radius, motion and touch targets come from
+[kraft-foundation](https://github.com/kedharsairam/kraft-foundation), which is also where the
+standard this app is built to is written down. It targets **standard 1.0.0**, and
+`kraft-lint` in that repository is what checks it.
+
+This repo stays private: it carries no voter data (see the .gitignore essay at the top of
+this project — code goes in, data does not), but it was written for a roll and is kept
+private anyway. The foundation is public and the dependency flows inward only, so nothing
+about the roll leaves through it.
+
+The app keeps its own theme system — teal-paper light and dark schemes, status colours,
+the `Space` CompositionLocal — with values now sourced from the shared tokens where they
+match. Its own dimensions (`BoothMetrics`: 52dp field heights across five screens,
+list and card minimums) stay local with their reasons, as do the hero display sizes
+(40/26) and the shapes' raw steps, which live in the exempt theme file.
+
 ## Zero permissions
 
 No permissions are declared and none are needed. Import and export both go through the system

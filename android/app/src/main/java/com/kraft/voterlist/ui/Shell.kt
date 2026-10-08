@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import com.kraft.ui.tokens.KraftSpacing
 
 /** The four places in the app. A bottom bar rather than a drawer: all one tap away. */
 enum class Tab(val title: String, val icon: ImageVector) {
@@ -241,7 +242,7 @@ private fun BoothBar(
                         Icon(
                             Icons.Default.ArrowDropDown,
                             "Switch booth",
-                            Modifier.size(20.dp),
+                            Modifier.size(KraftSpacing.Spacing20),
                         )
                     }
                 }
@@ -275,7 +276,7 @@ private fun BoothBar(
             // ambiguous. The sheet it opens is titled "Export Booth 108", so nothing is left
             // guessing, and the name is there for a screen reader.
             IconButton(onClick = onExport, enabled = !busy && s.hasBooth) {
-                Icon(Icons.Default.Save, "Export", Modifier.size(20.dp))
+                Icon(Icons.Default.Save, "Export", Modifier.size(KraftSpacing.Spacing20))
             }
             Spacer(Modifier.width(Space.xs))
         },
@@ -331,10 +332,10 @@ private fun BoxScope.MessageToast(message: String?, onClear: () -> Unit) {
     Surface(
         Modifier
             .align(Alignment.BottomCenter)
-            .padding(16.dp),
+            .padding(KraftSpacing.Spacing16),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.inverseSurface,
-        shadowElevation = 6.dp,
+        shadowElevation = KraftSpacing.Spacing6,
     ) {
         Text(
             message,

@@ -18,6 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kraft.ui.tokens.KraftTypeScale
+import com.kraft.ui.tokens.KraftRadius
+import com.kraft.ui.tokens.KraftSpacing
 
 /**
  * The app's design language.
@@ -63,13 +66,13 @@ data class StatusColours(
 /** The 8px rhythm. Use these rather than typing a number at a call site. */
 @Immutable
 data class Spacing(
-    val xs: androidx.compose.ui.unit.Dp = 4.dp,
-    val sm: androidx.compose.ui.unit.Dp = 8.dp,
-    val md: androidx.compose.ui.unit.Dp = 12.dp,
-    val lg: androidx.compose.ui.unit.Dp = 16.dp,
-    val xl: androidx.compose.ui.unit.Dp = 24.dp,
-    val xxl: androidx.compose.ui.unit.Dp = 32.dp,
-    val huge: androidx.compose.ui.unit.Dp = 48.dp,
+    val xs: androidx.compose.ui.unit.Dp = KraftSpacing.Spacing4,
+    val sm: androidx.compose.ui.unit.Dp = KraftSpacing.Spacing8,
+    val md: androidx.compose.ui.unit.Dp = KraftSpacing.Spacing12,
+    val lg: androidx.compose.ui.unit.Dp = KraftSpacing.Spacing16,
+    val xl: androidx.compose.ui.unit.Dp = KraftSpacing.Spacing24,
+    val xxl: androidx.compose.ui.unit.Dp = KraftSpacing.Spacing32,
+    val huge: androidx.compose.ui.unit.Dp = KraftSpacing.Spacing48,
 )
 
 val LocalStatus = staticCompositionLocalOf {
@@ -117,29 +120,29 @@ private val AppType = Typography().run {
             fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold,
         ),
         titleLarge = titleLarge.copy(
-            fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
+            fontSize = KraftTypeScale.Title3, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
         ),
         titleMedium = titleMedium.copy(
-            fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold,
+            fontSize = KraftTypeScale.Headline, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold,
         ),
         titleSmall = titleSmall.copy(
-            fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+            fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
         ),
-        bodyLarge = bodyLarge.copy(fontSize = 17.sp, lineHeight = 23.sp),
-        bodyMedium = bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
-        bodySmall = bodySmall.copy(fontSize = 13.sp, lineHeight = 17.sp),
-        labelLarge = labelLarge.copy(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-        labelMedium = labelMedium.copy(fontSize = 13.sp, lineHeight = 16.sp),
-        labelSmall = labelSmall.copy(fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.4.sp),
+        bodyLarge = bodyLarge.copy(fontSize = KraftTypeScale.Body, lineHeight = 23.sp),
+        bodyMedium = bodyMedium.copy(fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp),
+        bodySmall = bodySmall.copy(fontSize = KraftTypeScale.Footnote, lineHeight = 17.sp),
+        labelLarge = labelLarge.copy(fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+        labelMedium = labelMedium.copy(fontSize = KraftTypeScale.Footnote, lineHeight = 16.sp),
+        labelSmall = labelSmall.copy(fontSize = KraftTypeScale.Caption2, lineHeight = 14.sp, letterSpacing = 0.4.sp),
     )
 }
 
 private val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(KraftRadius.Small),
+    small = RoundedCornerShape(KraftRadius.Small),
+    medium = RoundedCornerShape(KraftRadius.Medium),
+    large = RoundedCornerShape(KraftRadius.Hero),
+    extraLarge = RoundedCornerShape(KraftRadius.Modal),
 )
 
 private val LightScheme = lightColorScheme(
