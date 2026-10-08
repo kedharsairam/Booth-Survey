@@ -274,4 +274,4 @@ private fun VoterRow(
 
 /** Clickable without the ripple stretching over the delete button, which made both look tappable. */
 private fun Modifier.rowClickable(onClick: () -> Unit): Modifier =
-    this.then(clickable(onClick = onClick))
+    this.clickable(onClick = onClick)
