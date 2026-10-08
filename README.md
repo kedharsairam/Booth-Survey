@@ -153,3 +153,11 @@ Verify it rather than trusting it:
 ```sh
 $(ls $HOME/Android/Sdk/build-tools/*/aapt2 | head -1) dump permissions dist/voter-survey.apk
 ```
+
+## Support
+
+If you enjoy Booth Survey, buy me a coffee:
+
+<p align="center">
+  <a href="https://buymeacoffee.com/kedhartech"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="182"></a>
+</p>
