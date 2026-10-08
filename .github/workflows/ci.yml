@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+defaults:
+  run:
+    working-directory: booth-survey/android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: booth-survey
+
+      - name: Checkout kraft-foundation
+        uses: actions/checkout@v4
+        with:
+          repository: kedharsairam/kraft-foundation
+          path: booth-survey/kraft-foundation
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Quality gate
+        run: node ../kraft-foundation/tools/kraft-lint/kraft-lint.js . --format github
+
+      - name: Build, test and lint
+        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --no-daemon
