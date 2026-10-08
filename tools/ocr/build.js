@@ -31,6 +31,7 @@ const { bitmapFromRect, serialBitmap, segment, normalise, classify } = require('
 const { readEpic, rankRepairs, setMaxDistance, segmentId } = require('./epicread.js');
 const { parseFields, VID } = require('./cardread.js');
 const { validateHouse } = require('./house.js');
+const lead = require('./leadgroup.js');
 const { buildLexicon, checkName, suggest } = require('./lexicon.js');
 const { luhnValid, check } = require('./epic.js');
 const { readHarvest, OUT } = require('./harvest.js');
@@ -130,10 +131,10 @@ async function main() {
   // Voter id policy
 // ---------------
 // Two independent readers, each with a different failure mode. Tesseract invents characters
-// -- "TST000006" comes back as "WQQO0062950". The template matcher over-segments glyphs,
+// -- "ZZZ9951849" comes back as "WQQO0062950". The template matcher over-segments glyphs,
 // and when the nearest reading at every position fails the check digit, widening the search
 // produces a dozen readings that satisfy it, among which the cheapest is not reliably right:
-// on serial 11 it chose WQQ8857401 over TST000009, confusing 8 for 0.
+// on serial 11 it chose ZZZ7746399 over ZZZ5302955, confusing 8 for 0.
 //
 // So neither reader is trusted alone, and the check digit is not treated as a tiebreak it
 // cannot win. The policy is:
@@ -169,8 +170,8 @@ for (const r of rows) {
   // about nine times in ten, and epic.js finds that substitution -- but only accepts it
   // when exactly one substitution validates, which is what makes it a proof rather than a
   // guess. This is the step that matters most for the remaining cards: serial 11 reads
-  // TST000009, whose digits sum to 22 under Luhn, and the single edit that makes it valid
-  // is WQQ0857409. Widening the template's beam did not reach that candidate, because the
+  // ZZZ5302955, whose digits sum to 22 under Luhn, and the single edit that makes it valid
+  // is ZZZ7524176. Widening the template's beam did not reach that candidate, because the
   // correct digit does not rank among the nearest three at that position.
   const shapeOk = ID_RE.test(r.vid);
   const single = shapeOk ? check(r.vid).repair : null;
@@ -273,11 +274,52 @@ for (const r of rows) {
       .map((t) => `${t.printed}${t.suggestion ? `->${t.suggestion}` : ''}`).join(' ');
   }
 
+  // ---- leading-group repair ------------------------------------------------
+  //
+  // A separate pass, after every value has a status, because what it needs is the set of
+  // groups this booth reads cleanly with -- and that can only be counted once the pass
+  // above has finished.
+  //
+  // Only clean values vote. A misread that happens to begin with a plausible group must
+  // not get to decide what a plausible leading group is, or the repair learns its own
+  // mistakes straight back.
+  const groupCounts = lead.learnLeadingGroups(rows);
+  const knownGroups = new Set(groupCounts.keys());
+  const knownMiddles = lead.learnMiddleRange(rows);
+  const modal = lead.modalGroup(groupCounts);
+  const fallback = rows.length < 30 ? lead.fallbackGroup() : null;
+  const target = modal || fallback;
+
+  console.log(`  leading groups in clean reads: ${[...knownGroups].sort().join(', ') || 'none'}`
+    + (groupCounts.size ? '' : '  (so no group can be learned)'));
+  console.log(`  repairs would target          : ${target || 'nothing, no repair attempted'}`
+    + `${modal ? '' : fallback ? '  (fallback: too few clean values)' : ''}`);
+
+  let repaired = 0;
+  for (const r of rows) {
+    if (r.house_status === 'valid' || r.house_status === 'missing') continue;
+    const fix = lead.proposeRepair(r.house, target, knownGroups, knownMiddles);
+    if (!fix) continue;
+    // The read value is kept alongside. An inferred number that turns out to be wrong
+    // has to be traceable to what was actually on the page, and the review CSV prints
+    // both columns.
+    r.house_read = r.house;
+    r.house_number = fix.value;
+    r.house_status = 'inferred';
+    r.house_warnings = [r.house_warnings, fix.why].filter(Boolean).join('; ');
+    r.house_repaired_from = fix.from;
+    r.house_repaired_to = fix.to;
+    repaired++;
+  }
+  console.log(`  leading group repaired         : ${repaired} of `
+    + `${rows.filter((r) => r.house_status === 'flagged').length + repaired} malformed`);
+
   // ---- write ---------------------------------------------------------------
   const cols = ['page', 'card', 'serial', 'serial_read', 'serial_proved',
     'voter_id', 'id_ocr', 'id_status', 'id_proved', 'id_settled', 'id_repair_from', 'id_alternatives',
     'name', 'name_status', 'name_suggestion', 'name_detail',
     'father', 'others', 'house', 'house_number', 'house_status', 'house_warnings',
+    'house_read', 'house_repaired_from', 'house_repaired_to',
     'age', 'gender'];
   fs.mkdirSync(path.dirname(outCsv), { recursive: true });
   const esc = (v) => {

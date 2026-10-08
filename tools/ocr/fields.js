@@ -14,19 +14,50 @@ const CARD_H = 1038;
 
 // serial -- the electoral-roll serial, boxed at the top left of the card.
 //
-// Measured on both rolls by column-ink profile rather than assumed: the box's own
-// borders are near-black verticals at dx ~5 and dx ~875, and the digits sit between
-// them, right-aligned, ending around dx 850. The two- and three-digit serials reach
-// furthest left (~dx 610); the one-digit ones sit hard against the right border.
+// The X range was measured on the Telugu roll, where the digits sat between the box's own
+// near-black borders at dx ~5 and dx ~875, right-aligned, ending near dx 850; the two- and
+// three-digit serials reached furthest left, about dx 610. That range is used here too, and
+// it is correct for this roll as well -- measured on English page 3 with measure-serial.js,
+// the digits land in the same relative position. It was worth re-checking anyway, because
+// the failure that follows this one was never a geometry failure.
 //
-// The right edge matters more than it looks. At dx 820 -- the value first measured,
-// on the Telugu roll -- a two-digit serial ending near 850 is clipped: serial 11
-// rendered as one "1" and a sliver, and the recogniser reported 122 correct out of
-// 1128 while the crops it was given were visibly incomplete. A field position is a
-// property of the document it was measured on until checked against another.
+// The Y range, though, was Telugu-only in effect, and the recognition mode was worse than
+// useless here. Two separate faults, found together on a full English run:
+//
+//   - 15 blank serials, 72 serial strings on more than one card, and confidence 0 on cards
+//     whose digit is plainly legible. The crops were checked and are clean -- a 1, 2, 3, 4
+//     and 5 side by side, each with the box's right-hand rule showing as a stray vertical
+//     bar. So the position was fine and the read was failing.
+//   - Under psm 8 with a digits-only whitelist, tesseract returned the *empty string* for
+//     card 0 -- a bare "1", which is a single narrow stem with no baseline to its left or
+//     right to anchor a word. psm 7 and psm 6 read all five cards correctly.
+//
+// So the position is kept and the mode below is changed. A single bare digit is a line, not
+// a word, and psm 8's model of a word is the wrong shape for it.
 const SERIAL = { x0: 600 / CARD_W, y0: 58 / CARD_H, x1: 866 / CARD_W, y1: 168 / CARD_H };
 
-// epic -- the voter id, top right, e.g. "TST000008". Measured ink dx
+// serial box -- the ruled rectangle the serial sits in, taken as a whole.
+//
+// The digits inside it touch its right-hand rule on every card measured, so no crop of this
+// box contains the serial and excludes the rule. read.js therefore takes the box and removes
+// the rule by its shape -- a column inked the full height of the interior -- rather than
+// trying to place a crop between them. The X range is the box's own left and right rules,
+// found on English page 3 by row profile (the box's top and bottom borders are rows inked
+// across 89% of the box's width, at dy 8 and dy 46 of a 249 px card); the Y range is the
+// interior between them.
+//
+// This is deliberately wider than SERIAL. SERIAL is where the digits are; this is where the
+// box is, and the box has to be taken whole so the rules can be seen and removed.
+//
+// The fractions are of the card box, measured on English page 3 where a card is 618 x 249 px,
+// and written as plain decimals rather than as pixels over CARD_W and CARD_H. Dividing those
+// pixels by the Telugu card size instead -- the way every constant above is written -- puts
+// the box at 8 px from the card's top instead of 9, and the reader then takes a crop of the
+// card's top border and reports every serial blank. The units here are a property of the
+// document measured, exactly like the fractions they replace.
+const SERIAL_BOX = { x0: 0.005, y0: 0.036, x1: 0.345, y1: 0.190 };
+
+// epic -- the voter id, top right, e.g. "ZZZ5857149". Measured ink dx
 // 1898..2514, dy 73..147. Always 3 letters then 7 digits.
 const EPIC = { x0: 1860 / CARD_W, y0: 55 / CARD_H, x1: 2545 / CARD_W, y1: 168 / CARD_H };
 
@@ -82,8 +113,23 @@ const PITCH_TOLERANCE = 0.45;  // fraction of the pitch a band may sit off and s
 // agree; PSM 8 is used. The trim on the crop is what separates them -- without
 // it PSM 8 drops to 28/30 with confidence around 11.
 const PSM8 = { tessedit_pageseg_mode: '8' };
-const DIGITS = { tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: '8' };
-const UPPER = { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', tessedit_pageseg_mode: '8' };
+// Recognition settings per field.
+//
+// psm 7, "assume a single text line", not psm 8's "assume a single word". Measured on the
+// serial crops of English page 3, five cards, each carrying a clean digit plus the box's
+// right-hand rule:
+//
+//     mode   results across the five cards
+//     psm 7  1 2 3 4 5      all five correct
+//     psm 6  1 2 3 4 5      all five correct
+//     psm 8  (blank) 2 3 4 5   the single-digit card returned nothing at all
+//     psm 13 2 3 4 5        same as psm 8
+//
+// psm 8 is also what the house vote was seven-ninths built from, where the same measurement
+// puts psm 7 and psm 6 two to three times ahead of it. It is the wrong default for this
+// form throughout: these values are digit runs inside a printed field, not words.
+const DIGITS = { tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: '7' };
+const UPPER = { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', tessedit_pageseg_mode: '7' };
 const HOUSE_WL = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-/. ';
 
 // The house field is the only one read by more than one configuration and
@@ -100,7 +146,7 @@ const HOUSE_PASSES = [
 const FIELDS = { serial: SERIAL, epic: EPIC };
 
 module.exports = {
-  CARD_W, CARD_H, SERIAL, EPIC, HOUSE_X0, HOUSE_X1,
+  CARD_W, CARD_H, SERIAL, SERIAL_BOX, EPIC, HOUSE_X0, HOUSE_X1,
   TEXT_REGION, LINE_INK_MIN, LINE_MIN_H, PITCH_TOLERANCE,
   PSM8, DIGITS, UPPER, HOUSE_PASSES, FIELDS,
 };

@@ -4,7 +4,7 @@ The defect: in rows 2 to 17 the first cell carries <w:gridSpan w:val="2"/>, so t
 rows describe a 20-column table while the table's <w:grid> declares 19. Everything
 after the first cell is therefore shifted one column left, and three headings land
 in columns that cannot hold them -- a voter id gets 4.99 mm, which is less than
-one character of "TST000010".
+one character of "ZZZ9818485".
 
 Row 1 is already consistent (its spans sum to 19), and the grid widths are all
 sensible in the order the headings imply. So the grid is right and one attribute

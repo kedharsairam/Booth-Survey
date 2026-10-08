@@ -4,8 +4,8 @@
 // ----------------------
 // Tesseract inserts characters into these ids. On a three-page sample it read 62 of 86
 // as well-formed and check-digit-valid; the failures were not near misses but invented
-// characters -- TST000006 came back as WQQO0062950, TST000012 as WTST000012,
-// TST000005 as HXD246412156. The crops were clean; the segmentation was not. This is
+// characters -- ZZZ9951849 came back as WQQO0062950, ZZZ7263494 as WZZZ7263494,
+// ZZZ5974548 as HXD246412156. The crops were clean; the segmentation was not. This is
 // the same over-segmentation that capped the serial field at 29 of 30, and template
 // matching fixed it there, so it is applied here rather than re-tuned around.
 //
@@ -222,7 +222,7 @@ function collectLuhn(prefix, ranked) {
  *
  * epic.js finds every one-character edit that makes an id satisfy its check digit, but
  * accepts a repair only when exactly one edit validates. For a seven-digit Luhn that
- * almost never happens -- TST000009 has five valid single edits -- so uniqueness is not
+ * almost never happens -- ZZZ5302955 has five valid single edits -- so uniqueness is not
  * available as a confidence signal at this length.
  *
  * Those five are still a far smaller and more plausible hypothesis space than anything

@@ -1,17 +1,20 @@
-// Measures where the serial digits actually sit inside a card, for both rolls.
+// Measures where the serial digits actually sit inside a card.
 //
 // The point is to stop assuming a field position carries over between documents.
 // F.SERIAL was measured on the Telugu roll and used on the English one, where it
-// produced 122 correct serials out of 1128 -- the recogniser was being handed
-// crops of blank paper and correctly reporting nothing. A field position is a
-// property of one document until measured on another.
+// produced 122 correct serials out of 1128 -- the recogniser was being handed crops of
+// blank paper and correctly reporting nothing. A field position is a property of one
+// document until measured on another, which is worth keeping in mind: the same roll is
+// not two versions of itself.
+//
+// English only. The Telugu roll was dropped; the English roll is the one that gets
+// extracted from.
 
 const { detect, readGray } = require('./grid.js');
 const { pagePng } = require('./layout.js');
 
 const ROLLS = [
-  ['ENGLISH', process.argv[2], 3],
-  ['TELUGU ', process.argv[3], 5],
+  ['ENGLISH', process.argv[2], Number(process.argv[3] || 3)],
 ];
 
 for (const [tag, pdf, page] of ROLLS) {

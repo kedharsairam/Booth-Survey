@@ -116,10 +116,55 @@ function pageLayout(pdf, dpi = 240, firstPage = FIRST_LIST_PAGE, lastPage = LAST
   return { pages: out, total: offset };
 }
 
-module.exports = { pageLayout, pagePng, docKey, FIRST_LIST_PAGE, LAST_LIST_PAGE, CACHE };
+// A page's cards come from detectCached, which caches the grid *after* lattice completion.
+// That ordering is load-bearing for anything that numbers cards by position: detect() alone
+// misses a card on English page 13, and every serial after it would be off by one.
+const LIST_MIN = 20;   // cards before a page counts as a list page rather than front matter
+
+/**
+ * Every list page in the roll, each with the serial its first card must carry.
+ *
+ * pageLayout above takes the first and last page as arguments, because the Telugu roll
+ * carries cards on pages 4-46 and the English roll on 3-45. This finds them instead, so a
+ * caller that needs a serial can have one without already knowing where the roll starts.
+ *
+ * The first list page is the first page carrying at least LIST_MIN cards. Front matter on
+ * this roll does not come close: page 1 holds two boxes, page 2 none. LIST_MIN cannot be
+ * used to decide which pages are list pages further on -- parts end on partial pages of four
+ * cards -- so it decides only where the roll starts, and the count is printed so the caller
+ * can see it was not a guess.
+ *
+ * @returns {{pages: Array<{page:number, png:string, cards:Array, count:number, first:number}>,
+ *            total:number, firstList:number}}
+ */
+function cardPages(pdf, dpi = 240) {
+  const total = Number((execFileSync('pdfinfo', [pdf]).toString()
+    .match(/^Pages:\s+(\d+)/m) || [])[1] || 0);
+  const out = [];
+  let offset = 0;
+  let firstList = null;
+  for (let p = 1; p <= total; p++) {
+    let cards;
+    try {
+      cards = detectCached(pdf, p, dpi).cards;
+    } catch (err) {
+      continue;                                  // not a page this document can yield
+    }
+    if (!cards.length) continue;
+    if (firstList === null) {
+      if (cards.length < LIST_MIN) continue;     // front matter: the cover's boxes, a blank
+      firstList = p;
+    }
+    out.push({ page: p, png: pagePng(pdf, p, dpi), cards, count: cards.length, first: offset + 1 });
+    offset += cards.length;
+  }
+  return { pages: out, total: offset, firstList };
+}
+
+module.exports = { pageLayout, cardPages, pagePng, docKey, FIRST_LIST_PAGE, LAST_LIST_PAGE, CACHE };
 
 if (require.main === module) {
-  const { pages, total } = pageLayout(process.argv[2], Number(process.argv[3] || 300));
-  console.log(`  ${pages.length} list pages, ${total} cards`);
+  const { pages, total, firstList } = cardPages(process.argv[2], Number(process.argv[3] || 240));
+  console.log(`  ${pages.length} list pages from page ${firstList}, ${total} cards`);
   console.log(`  ${pages.map((p) => `p${p.page}=${p.count}@${p.first}`).join('  ')}`);
 }

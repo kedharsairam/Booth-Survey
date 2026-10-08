@@ -194,15 +194,23 @@ function renderLineSync(pagePng, rect, file, scale = SCALE, thr = 62) {
   return file;
 }
 
-async function renderLine(pagePng, rect, file, scale = SCALE, thr = 62) {
+// `trim` is what the house vote wants: it drops the surrounding whitespace so the
+// recogniser sees the value alone. A caller that needs to map a bounding box from the
+// recogniser back onto the page must turn it off, because -trim shifts the image origin
+// by an amount that is not knowable from the arguments. The label locator needs that
+// mapping -- that is how it finds where the value starts -- so it asks for no trim and
+// gets a crop whose pixel (0,0) is the crop rectangle's own top left.
+async function renderLine(pagePng, rect, file, scale = SCALE, thr = 62, trim = true) {
   if (process.env.BOOTH_OCR_FASTCROP === '1') {
-    return require('./fastcrop.js').renderCrop(pagePng, rect, file, scale, thr, BORDER, true);
+    return require('./fastcrop.js').renderCrop(pagePng, rect, file, scale, thr, BORDER, trim);
   }
-  await execFileAsync('convert', [pagePng,
+  const args = [pagePng,
     '-crop', `${rect.w}x${rect.h}+${rect.x0}+${rect.y0}`, '+repage',
     '-colorspace', 'Gray', '-resize', `${scale * 100}%`,
-    '-threshold', `${thr}%`,
-    '-trim', '+repage', '-bordercolor', 'white', '-border', String(BORDER), file]);
+    '-threshold', `${thr}%`];
+  if (trim) args.push('-trim', '+repage');
+  args.push('-bordercolor', 'white', '-border', String(BORDER), file);
+  await execFileAsync('convert', args);
   return file;
 }
 

@@ -46,7 +46,7 @@ class StoreParsingTest {
         assertEquals("f1", JSONObject("""{"familyId": "f1"}""").stringOrNull("familyId"))
         // An id is made of hex and dashes, so it never looks like a number and never gets
         // rewritten into one.
-        assertEquals("TST000010", JSONObject("""{"voterId": "TST000010"}""").stringOrNull("voterId"))
+        assertEquals("ZZZ9818485", JSONObject("""{"voterId": "ZZZ9818485"}""").stringOrNull("voterId"))
     }
 
     @Test

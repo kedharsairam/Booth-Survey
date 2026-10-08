@@ -22,14 +22,106 @@ const { textLines } = require('./card.js');
 // Label text as the roll prints it, and what each one means here. Ordered so that the
 // longer labels are tested before the shorter ones they contain: a bare "name" must not
 // claim the "Name" inside "Fathers Name".
+// The relation lines -- "Father's Name" and "Husband's Name" -- have to be recognised, and
+// they have to be recognised *by stem*.
+//
+// Measured on the English roll: the label recogniser cannot spell these. Across 86 cards
+// the father line came out as "fathers" every time (apostrophe dropped), and the husband
+// line came out as one of "husbant" (13), "husbanc" (6) or "husban" (6) -- the final d lost
+// every single time. So neither /husband/i nor /husband'?s?\s*name/i matches any observed
+// spelling. The stem is the only reliable thing.
+//
+// This matters more than a mis-parse. An unrecognised line is treated as a wrapped
+// continuation of whatever field is above it, and a relation line sits directly under the
+// name line -- so an unrecognised husband line lands in the name. Measured on that roll:
+// 25 of 86 cards carried a husband line, which is the "almost half" of names that came out
+// wrong.
+//
+// The value is not thrown away. lexicon.js harvests it deliberately, because the members of
+// a household share it and it is evidence about people who are not themselves voters. What
+// must never happen is it being written as the voter's own name.
+// Matched on the stem, then optionally the possessive and the word "name". Every part of
+// that is load-bearing, and each was found by a form the roll actually produced:
+//
+//   /(?:father|husban)\w*/i                      matched "husbant:" but not "Husbands Name:",
+//                                                 because there was no room for the " Name"
+//                                                 suffix, so the regex backtracked and the
+//                                                 generic "name" alternative claimed the line
+//   /(?:father|husban)\w*'?(?:\s*name)?/i       still wrong, and instructive: with the
+//                                                 apostrophe *outside* the optional group,
+//                                                 "Father's Name" matched only as "Father'",
+//                                                 leaving " Name:" unmatched, so the whole
+//                                                 alternative failed at position 0 and the
+//                                                 generic "name" alternative claimed the line
+//                                                 further along
+//   /(?:father|husban)[\w']*(?:\s*name)?/i       apostrophe and word inside one optional
+//                                                 group, so the group is all-or-nothing
+//
+// The apostrophe matters because the roll prints "Father's Name" and "Husband's Name" with
+// one, while the label-only crop loses it ("fathers"). Both spellings occur, so both are
+// allowed.
+const RELATION_RE = /(?:father|husban)[\w']*(?:\s*name)?/i;
+
+// "House Number :", "House Number:", and the label-only crop's "house n" / "house nn".
+// A bare /house/i was tried and broke the colon path entirely: "house" matched, then the
+// following \s*: found "Number" instead of a colon, the alternative failed, and the whole
+// house label stopped being recognised at all.
+const HOUSE_RE = /house(?:\s*\w*)?/i;
+
+// The roll does not always print a bare house number. On some cards the value is preceded by
+// its own abbreviation -- serial 1123 reads "House Number : D.No 91-6-6/2" -- and reading that
+// whole string as the value is how "DNO-96-6-6/2" and "DOOR NUMBER 11" ended up in the house
+// field, where a door number decides who is counted as one family.
+//
+// The prefix is stripped rather than tolerated, because leaving it in does not merely make the
+// value untidy: it makes it a *different household* from the same door written on a neighbouring
+// card, and the booklet groups by this value. "D.No 91-6-6/2" and "91-6-6/2" must be one door.
+//
+// Matched on the abbreviation's own letters, and anchored to the start of the value, so a
+// number that happens to contain "no" is untouched. The variants are the ones the roll prints
+// or the recogniser has produced: "D.No", "D No", "D.No.", "Door No", "Door Number", "DNO",
+// "DOORNO", "DOORNUMBER".
+//
+// Two details are load-bearing, and both were found by looking at what the roll actually
+// produced rather than at what it is supposed to print:
+//
+//   - There is no word boundary after the abbreviation. The recogniser drops the space in
+//     "D.No 91-6-6/2" and returns "D.No91-6-6/2", and in "Door Number 91-6-6/2" it returns
+//     "DOORNUMBER91-6-6/2". Between "o" and "1" there is no boundary, so requiring one left
+//     six cards with their prefix still attached -- "DNO93-5-5/5", "DOORNUMBER93-5-5/5" -- which
+//     is the original bug, on the majority of the cards that have this form.
+//   - The space in "Door No" is optional for the same reason: "DOORNO92-5-5/4" is what came
+//     back.
+//
+// Instead of a boundary, the abbreviation must be *followed by a digit*. That is the better
+// anchor: a house number starts with a digit, so requiring one both ends the prefix in the
+// right place and guarantees the pattern cannot eat part of a value that merely happens to
+// begin with those letters.
+const HOUSE_PREFIX = /^\s*(?:d\s*\.?\s*no\.?|door\s*\.?\s*(?:no\.?|number))\s*[:.\-/]?\s*(?=\d)/i;
+
+// Exported for the label gate, which tests the pattern against every printed form directly.
+// The parsing itself is done by finishHouse, which needs no pattern -- it anchors on the first
+// digit, which is a fact about house numbers rather than a list of prefixes to keep in step.
+function stripHousePrefix(value) {
+  const v = String(value || '');
+  return { value: v.replace(HOUSE_PREFIX, ''), hadPrefix: HOUSE_PREFIX.test(v) };
+}
+
 const FIELD_LABELS = [
   // The roll prints an "Others" line for political affiliation. It is not a field this
   // project extracts, but it has to be recognised, because an unrecognised line is
   // treated as a wrapped continuation of whatever field is above it -- which put
   // "Others: Naga Anja" into somebody's name.
   { field: 'others', re: /others/i },
-  { field: 'house', re: /house\s*number/i },
-  { field: 'father', re: /father'?s?\s*name/i },
+  // "house" alone, not "house number". Measured label OCR on this roll gives 'house n',
+  // 'house nn' and 'house in', and /house\s*number/i matches none of them. An unrecognised
+  // line is treated as a wrapped continuation of the field above it, and the house line
+  // sits directly under the relation line, so a miss here appends a door number to a
+  // relation name. "house" is unambiguous as a label word, so the shorter pattern is safer.
+  { field: 'house', re: HOUSE_RE },
+  // Before "name", and that order is load-bearing: "husbands name" contains "name", so a
+  // table with name first routes the husband's line straight into the name field.
+  { field: 'father', re: RELATION_RE },
   { field: 'gender', re: /gender/i },
   { field: 'age', re: /age/i },
   { field: 'name', re: /name/i },
@@ -38,10 +130,14 @@ const FIELD_LABELS = [
 // Every label the roll prints, in one pattern. The alternation order is what keeps
 // "Fathers Name:" from being read as a name field: the scan is left to right, so it
 // reaches the "F" of "Fathers" first and the longer alternative matches there.
-const LABEL_RE = /(others|house\s*number|father'?s?\s*name|gender|age|name)\s*:/gi;
+// One pattern for the relation lines, shared with FIELD_LABELS, so the two cannot drift.
+// Relation alternatives come before "name" for the reason given above.
+const LABEL_RE = new RegExp(
+  `(others|${HOUSE_RE.source}|${RELATION_RE.source}|gender|age|name)\\s*:`, 'gi');
 
 // The same labels with no colon required, for the lines where the colon was misread.
-const LABEL_WORD_RE = /\b(others|house\s*number|father'?s?\s*name|gender|age|name)\b/i;
+const LABEL_WORD_RE = new RegExp(
+  `\\b(others|${HOUSE_RE.source}|${RELATION_RE.source}|gender|age|name)\\b`, 'i');
 
 // The voter's id box, as fractions of the card. It is the one framed field, top right,
 // and does not move. Measured on page 3: ink from dx 455 to dx 610, dy 15 to dy 32.
@@ -59,6 +155,26 @@ function render(png, card, box, out, { scale = 300, threshold = true } = {}) {
   args.push('-resize', `${scale}%`, '-bordercolor', 'white', '-border', '10', out);
   execFileSync('convert', args);
   return out;
+}
+
+// Finishes a house value: strips the roll's own printed prefix in front of it.
+//
+// Applied here, inside parseLine, rather than by each caller. It was applied at two call
+// sites first -- read.js and readCard -- and the gap between them was a bug: the colon path
+// through parseLine returned "DOOR NUMBER 93-5-5/5" untouched because neither caller saw it as
+// a house value worth cleaning, so the prefixed forms reached the dataset while the
+// unprefixed ones were cleaned. One place, every path.
+//
+// A house number always begins with a digit, so anything before the first digit is debris:
+// either the roll's abbreviation or a separator the recogniser got wrong. Both are handled the
+// same way, which is why "House Number t 96-5-5/3" -- the colon misread as a letter, on eight
+// cards on page 19 -- and "House Number : DOOR NUMBER 93-5-5/5" need no separate rules.
+function finishHouse(entry) {
+  if (entry.field !== 'house') return entry;
+  const raw = String(entry.value || '');
+  const at = raw.search(/\d/);
+  if (at > 0) return { field: 'house', value: raw.slice(at).trim(), housePrefix: raw.slice(0, at).trim() };
+  return { field: 'house', value: raw.trim(), housePrefix: '' };
 }
 
 /**
@@ -107,7 +223,15 @@ function parseLine(text) {
     // stripped only if it is punctuation -- "House Number (cent) 97-3-3/1" -- because a
     // looser rule would eat the value itself when the value follows the label directly.
     const after = t.slice(word.index + word[0].length);
-    return [{ field, value: after.replace(/^\s*[^A-Za-z0-9]*\s*/, '').trim() }];
+    // A house number always begins with a digit, so for this field the separator can be found
+    // rather than guessed at. The generic rule above strips only punctuation, because a looser
+    // one would eat a value that follows its label directly -- but that leaves a misread colon
+    // that came back as a letter, which is what "House Number t 96-5-5/3" is: the colon read as
+    // "t", and eight cards on page 19 carry it. The value here is known to start with a digit,
+    // so everything up to the first digit is debris, and that is a fact about the field rather
+    // than an assumption about the render.
+    const value = after.replace(/^\s*[^A-Za-z0-9]*\s*/, '');
+    return [finishHouse({ field, value })];
   }
 
   const out = [];
@@ -119,7 +243,7 @@ function parseLine(text) {
     const stop = i + 1 < marks.length ? marks[i + 1].start : undefined;
     out.push({ field: marks[i].field, value: t.slice(marks[i].end, stop).trim() });
   }
-  return out;
+  return out.map(finishHouse);
 }
 
 /**
@@ -191,4 +315,7 @@ async function readCard(worker, png, pageW, px, card) {
   return { fields, lines, unattributed };
 }
 
-module.exports = { readCard, render, parseLine, parseFields, VID, FIELD_LABELS, LABEL_RE };
+module.exports = {
+  readCard, render, parseLine, parseFields, VID, FIELD_LABELS, LABEL_RE,
+  RELATION_RE, HOUSE_RE, LABEL_WORD_RE, stripHousePrefix, HOUSE_PREFIX,
+};
