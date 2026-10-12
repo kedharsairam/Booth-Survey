@@ -56,7 +56,17 @@ data class Undo(
      * Undo on the family screen instead, where the thing being reordered is on display.
      */
     val inToast: Boolean = true,
-)
+) {
+    /**
+     * The booth to put back, or null if putting it back would be wrong.
+     *
+     * Undo holds a snapshot of a booth that was on screen at the time. If the booth has
+     * since been switched, or re-imported under the same screen, restoring would resurrect
+     * an old roll over a newer one -- silently overwriting whatever happened in between.
+     * So the guard lives here rather than inline, where a test can hold it still.
+     */
+    fun targetFor(current: Booth): Booth? = if (before.id == current.id) before else null
+}
 
 /**
  * What the screens read.
@@ -368,7 +378,7 @@ class SurveyViewModel(
      */
     fun undoLast() {
         val u = _state.value.undo ?: return
-        if (u.before.id != _state.value.booth.id) {
+        if (u.targetFor(_state.value.booth) == null) {
             say("That is no longer the booth on screen, so it cannot be put back.")
             return
         }

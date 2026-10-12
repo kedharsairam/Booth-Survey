@@ -91,6 +91,24 @@ data class Booth(
         })
 
     /**
+     * The people still to come back to: everyone not yet knocked at.
+     *
+     * Skipped counts as still to visit. The app says so in two places -- under the status
+     * control, and on the bulk Skip action -- and it is the honest reading: a skipped house
+     * is one nobody has been to. That is also what the Home headline counts now, because
+     * counting skipped as finished is what let it say "All visited" over forty unvisited
+     * houses.
+     *
+     * One function, used by both exports on purpose. They were reading the question
+     * separately -- the spreadsheet dropped anyone visited *or* skipped, the booklet kept a
+     * whole household if anybody in it was unfinished -- so one checkbox in the export sheet
+     * produced two files containing different people, with nothing saying so. There is now
+     * nothing to disagree about.
+     */
+    fun forPendingOnly(): Booth = copy(voters = voters.filter { !it.visited })
+
+
+    /**
      * Moves the given voters into [familyId], appended after the members already there in
      * roll order. Movers keep nothing of their old position: like [SurveyViewModel.addMember]
      * they go to the end, and the surveyor arranges from there.
@@ -115,6 +133,16 @@ data class FamilyWithMembers(
     val done: Int get() = members.count { it.isDone }
     val complete: Boolean get() = size > 0 && done == size
     val lowestSerial: Int get() = members.minOfOrNull { it.serial } ?: 0
+
+    /**
+     * Whether the whole household has been knocked at, for the booklet's pending-only run.
+     *
+     * The same question [Booth.forPendingOnly] asks, asked per household rather than per
+     * person, because the booklet keeps a house whole: a house with anyone left in it
+     * prints. Without a shared definition the two exports disagree about who "still to
+     * visit" means, which is exactly the bug this replaced.
+     */
+    fun isFinished(): Boolean = members.all { it.visited }
 
     /** Whoever is first, which is who the family is named after. */
     val head: Voter? get() = members.firstOrNull { it.name.isNotBlank() } ?: members.firstOrNull()

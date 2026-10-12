@@ -28,6 +28,17 @@ object PrintOrder {
     ) {
         val isSolo: Boolean get() = familyId == null
         val size: Int get() = members.size
+
+        /**
+         * Whether everyone in this block has been knocked at.
+         *
+         * The booklet's answer to "still to visit", and it has to match
+         * [Booth.forPendingOnly]'s. The two were written separately and disagreed -- the
+         * spreadsheet dropped anyone visited or skipped, this kept any house with one
+         * person left -- so one checkbox produced two different sets of people. Both now
+         * ask the same question of [Voter.visited].
+         */
+        fun isFinished(): Boolean = members.all { it.visited }
     }
 
     /**

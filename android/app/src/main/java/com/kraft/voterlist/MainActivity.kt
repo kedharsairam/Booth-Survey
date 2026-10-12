@@ -149,15 +149,9 @@ class MainActivity : ComponentActivity() {
                         val booth = vm.activeBooth()
                         XlsxExporter.write(
                             out,
-                            // !visited, not !isDone. One checkbox drove two files and they
-                            // did not agree: the spreadsheet dropped anyone visited or
-                            // skipped, while the booklet kept a whole household if anybody
-                            // in it was unfinished -- so he ticked one box, got two files,
-                            // and the people were not the same people. Both now mean "not
-                            // knocked at yet", which is also what the export sheet's count
-                            // has said since skipped stopped counting as finished.
-                            if (onlyPending) booth.copy(voters = booth.voters.filter { !it.visited })
-                            else booth,
+                            // Same function the booklet uses, so one checkbox cannot mean
+                            // two different sets of people. See Booth.forPendingOnly.
+                            if (onlyPending) booth.forPendingOnly() else booth,
                             vm.activeLists(),
                         )
                     }

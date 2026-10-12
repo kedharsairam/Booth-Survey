@@ -191,9 +191,9 @@ object PdfExporter {
             // "Still to visit" skips a block only when every single member is done. A house
             // where one of four has been surveyed still has three people standing behind it,
             // and dropping it would quietly shorten the day's work.
-            // !visited, to match the spreadsheet. See the note on the xlsx filter: one
-            // checkbox used to mean two different sets of people.
-            if (onlyPending && b.members.all { it.visited }) continue
+            // The same question the spreadsheet asks, asked per household. Both go through
+            // Booth so they cannot drift apart again.
+            if (onlyPending && b.isFinished()) continue
 
             var at = 0
             while (at < b.members.size) {

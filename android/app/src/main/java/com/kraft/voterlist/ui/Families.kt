@@ -92,6 +92,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -749,8 +750,14 @@ fun FamilyEditScreen(vm: SurveyViewModel, s: UiState) {
             Text(
                 // Short enough to sit on one line: the longer phrasing wrapped to two and
                 // pushed the list down the screen for a sentence that only has to name the
-                // two gestures.
-                "Hold for actions  ·  arrows to move",
+                // controls.
+                //
+                // It used to say "Hold for actions", because holding was the only way to
+                // reach them -- including the one action on this screen that undoes work.
+                // Each row now has a three-dot button for that, and telling a 60-year-old
+                // to hold a row still to find it is asking for the thing that made the
+                // gesture unreliable in the first place.
+                "⋯ for actions  ·  arrows to move",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -935,6 +942,17 @@ private fun MemberRow(
     // platform minimum, on the control a shaky finger most needs to be able to hit.
     val rowHeight = maxOf(Space.sm * 2 + nameLine + detailLine, BoothMetrics.TouchTarget)
 
+    // Whether the three buttons sit beside the name or on a line of their own.
+    //
+    // This row grew a third button -- the one that opens the member's actions, which had
+    // none -- and the name is what the row is for. On a 360dp phone, three 48dp buttons
+    // plus the position number leave the name about 128dp, which truncates a Telugu name
+    // even at the default font and leaves two characters at a 1.5x one. So on a phone the
+    // buttons get their own line and the name takes the width back; a wider screen keeps
+    // them inline, where there is room for both.
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val stacked = screenWidthDp < 420 || density.fontScale >= 1.3f
+
     // Same three signals as the family cards, for the same reason: grow, outline, and lift
     // clear with zIndex -- without that last one the row slides *under* the one it is
     // passing, which reads as broken rather than plain.
@@ -965,7 +983,8 @@ private fun MemberRow(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(rowHeight)
+            // A stacked row carries a second line of buttons and must be free to grow.
+            .then(if (stacked) Modifier else Modifier.height(rowHeight))
             .testTag("member-row-${m.id}")
             .zIndex(if (dragging) 1f else 0f)
             .graphicsLayer {
@@ -1012,10 +1031,58 @@ private fun MemberRow(
             .then(drag.pressable(m.id))
             .then(track),
     ) {
+        // Measured so a hold landing on it is left alone rather than also nudging the
+        // row a place. See onArrow.
+        val buttons: @Composable () -> Unit = {
+            Row(
+                Modifier.onGloballyPositioned {
+                    val p = it.positionInParent()
+                    arrowBox = Rect(
+                        p,
+                        p + Offset(it.size.width.toFloat(), it.size.height.toFloat()),
+                    )
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = { onStep(-1) },
+                    enabled = !first,
+                    modifier = Modifier.size(BoothMetrics.TouchTarget),
+                ) {
+                    Icon(Icons.Default.KeyboardArrowUp, "Move ${m.name} earlier")
+                }
+                IconButton(
+                    onClick = { onStep(1) },
+                    enabled = !last,
+                    modifier = Modifier.size(BoothMetrics.TouchTarget),
+                ) {
+                    Icon(Icons.Default.KeyboardArrowDown, "Move ${m.name} later")
+                }
+            // The one action in the app that had no button at all.
+            //
+            // "Take out of this family" existed only inside the sheet that a long press
+            // opens. The arrows cover move earlier and move later, and opening the voter
+            // covers Open -- so taking somebody out of a household, which changes who
+            // the printed form says lives there, could not be done without holding a row
+            // still enough for half a second to survive as a long press.
+                IconButton(
+                    onClick = onHold,
+                    modifier = Modifier.size(BoothMetrics.TouchTarget),
+                ) {
+                    Icon(Icons.Default.MoreVert, "More actions for ${m.name}")
+                }
+            }
+        }
+
         Row(
             Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                // The weight is what makes this row take the leftover height of a
+                // fixed-height column. A stacked row is not fixed-height, so there is no
+                // leftover to take and the weighted row measured zero -- the name and the
+                // serial vanished and only the buttons were left. So it is sized by its
+                // content instead, which is what it needs when it is the whole row.
+                .then(if (stacked) Modifier else Modifier.weight(1f))
                 // Vertical as well as horizontal, and this is the whole of the "no space at
                 // the top" complaint: the row's height budgets Space.sm above and below, but
                 // only the horizontal padding was ever applied, so all of it pooled at the
@@ -1075,44 +1142,15 @@ private fun MemberRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            // Beside the name at the normal size, on a line of its own when the text is
+            // large. Either way the same three controls, the same 48dp, the same actions.
+            if (!stacked) buttons()
+        }
+        if (stacked) {
             Row(
-                Modifier.onGloballyPositioned {
-                    val p = it.positionInParent()
-                    arrowBox = Rect(
-                        p,
-                        p + Offset(it.size.width.toFloat(), it.size.height.toFloat()),
-                    )
-                },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = { onStep(-1) },
-                    enabled = !first,
-                    modifier = Modifier.size(BoothMetrics.TouchTarget),
-                ) {
-                    Icon(Icons.Default.KeyboardArrowUp, "Move ${m.name} earlier")
-                }
-                IconButton(
-                    onClick = { onStep(1) },
-                    enabled = !last,
-                    modifier = Modifier.size(BoothMetrics.TouchTarget),
-                ) {
-                    Icon(Icons.Default.KeyboardArrowDown, "Move ${m.name} later")
-                }
-                // The one action in the app that had no button at all.
-                //
-                // "Take out of this family" existed only inside the sheet that a long press
-                // opens. The arrows cover move earlier and move later, and opening the voter
-                // covers Open -- so taking somebody out of a household, which changes who
-                // the printed form says lives there, could not be done without holding a row
-                // still enough for half a second to survive as a long press.
-                IconButton(
-                    onClick = onHold,
-                    modifier = Modifier.size(BoothMetrics.TouchTarget),
-                ) {
-                    Icon(Icons.Default.MoreVert, "More actions for ${m.name}")
-                }
-            }
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) { buttons() }
         }
         // The outline is the accent while dragging and invisible otherwise, drawn as a
         // border rather than a shadow: this screen gets read outdoors too, and a shadow

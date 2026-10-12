@@ -238,7 +238,17 @@ fun FilterSheet(s: UiState, vm: SurveyViewModel, onClose: () -> Unit) {
                     enabled = dirty,
                     modifier = Modifier.weight(1f).heightIn(min = BoothMetrics.FieldHeight),
                     shape = MaterialTheme.shapes.medium,
-                ) { Text("Show $draftCount") }
+                ) {
+                    // One line. Left to wrap, "Show 1216" broke over two and read as two
+                    // separate words, which on the button that applies the whole filter is
+                    // not a thing to be casual about.
+                    Text(
+                        "Show $draftCount",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
             }
         }
     }
@@ -296,11 +306,15 @@ private fun OptionRow(label: String, count: String, picked: Boolean, onPick: () 
     ) {
         RadioButton(selected = picked, onClick = null)
         Spacer(Modifier.width(Space.sm))
+        // Two lines, because at a 1.5x font one was not enough: "Left to visit" came out
+        // as "Left to vi...", on one of the three filters he is most likely to reach for.
+        // The row is a list item that can grow, so wrapping costs nothing and an
+        // unreadable label costs the filter.
         Text(
             label,
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(1f),
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         if (count.isNotEmpty()) {
