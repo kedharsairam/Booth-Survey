@@ -1,5 +1,11 @@
 package com.kraft.voterlist.ui
 
+import androidx.compose.material.icons.filled.PhoneAndroid
+
+import androidx.compose.material.icons.filled.Lock
+
+import androidx.compose.material.icons.filled.CloudOff
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -101,6 +107,66 @@ fun SettingsScreen(vm: SurveyViewModel, s: UiState, onImport: () -> Unit) {
             BoothCard(vm, s, onImport, fields)
             Spacer(Modifier.height(Space.xl))
 
+            Spacer(Modifier.height(Space.xl))
+
+            // About. Added because "how do I get my data back" and "is this thing on my
+            // phone going to vanish" are the two questions anybody has about an app that
+            // holds a day's work, and the honest answers are worth putting where he can
+            // read them without asking. Nothing here is marketing.
+            Section(
+                "About",
+                "Booth Survey, version 1.0",
+            )
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                "Keeps the voters list for one booth on this phone: who is in it, which " +
+                    "house each person is at, who you have been to, and who lives with " +
+                    "whom. It prints a booklet on the same form you already use, in the " +
+                    "order you walk the street.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.md))
+            AboutFact(
+                Icons.Default.CloudOff,
+                "Works with no internet",
+                "Nothing you type is sent anywhere. There is no account and nothing to " +
+                    "sign in to.",
+            )
+            AboutFact(
+                Icons.Default.Lock,
+                "Kept on this phone only",
+                "Your lists live in the app's own storage. Nothing else on the phone can " +
+                    "read them, and no other app can see them.",
+            )
+            AboutFact(
+                Icons.Default.PhoneAndroid,
+                "Changing phones",
+                "This phone holds the work. If it is lost or you swap it, the visits you " +
+                    "have recorded do not come with you. Print the list before you hand " +
+                    "the phone in.",
+            )
+            Spacer(Modifier.height(Space.lg))
+            Section("Working out how to use it")
+            Spacer(Modifier.height(Space.sm))
+            AboutStep(
+                "To open someone, tap their row.",
+            )
+            AboutStep(
+                "To work on several at once, tap the empty circle on the right of a row. " +
+                    "The bar that appears then does it to everyone ticked.",
+            )
+            AboutStep(
+                "On Families, the three dots on a person give every action for them, " +
+                    "including taking them out of the house.",
+            )
+            AboutStep(
+                "Every message tells you what happened, and the last one can be put " +
+                    "back with Undo.",
+            )
+            Spacer(Modifier.height(Space.xl))
+
+
             Section(
                 "Shared lists",
                 "The choices offered in the dropdown on every voter, shared by every booth. " +
@@ -133,6 +199,44 @@ fun SettingsScreen(vm: SurveyViewModel, s: UiState, onImport: () -> Unit) {
  * reader working out which words are the label and which are the explanation -- and a
  * screen whose labels are the smallest text on it does not read as organised.
  */
+/** One line of the About block: a small mark, a claim, and the detail under it. */
+@Composable
+private fun AboutFact(icon: androidx.compose.ui.graphics.vector.ImageVector, claim: String, detail: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
+        Icon(
+            icon,
+            null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .padding(top = Space.xs)
+                .size(20.dp),
+        )
+        Spacer(Modifier.width(Space.md))
+        Column(Modifier.weight(1f)) {
+            Text(claim, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** One instruction, numbered by the dot rather than by a digit. */
+@Composable
+private fun AboutStep(text: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
+        Text(
+            "\u2022",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(Space.sm))
+        Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+    }
+}
+
 @Composable
 private fun Section(title: String, blurb: String? = null) {
     Text(title, style = MaterialTheme.typography.titleMedium)
