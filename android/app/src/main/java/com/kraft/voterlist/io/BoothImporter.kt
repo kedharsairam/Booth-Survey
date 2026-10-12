@@ -28,7 +28,7 @@ import com.kraft.voterlist.data.Voter
  * **Anyone in the booth but not in the sheet is kept and flagged**, not deleted. Deleting is
  * not recoverable here, and a finalized roll that has quietly dropped somebody should not
  * quietly delete your work on them -- but they do get marked, because if the roll struck them
- * off as dead or moved away, the booklet would otherwise still send you to their door.
+ * off as dead or moved away, the sheet would otherwise still send you to their door.
  */
 object BoothImporter {
 

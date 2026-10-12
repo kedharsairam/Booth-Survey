@@ -1,23 +1,21 @@
 package com.kraft.voterlist.data
 
 /**
- * The order the booklet prints in.
+ * The order the export prints in.
  *
- * Door number leads, and the surveyor's arrangement within a family settles everything else.
- * A family is placed at the *lowest* house number among its members, because families do not
- * always sit at one address -- people move, households split, the roll disagrees with itself
- * -- and when that happens the lowest number is where someone looking for that street will
- * look first.
+ * Families print in the surveyor's arranged walking order, set with the arrows on the
+ * family screen: the street is walked the way he arranged it, not the way the roll
+ * numbers it. Inside a family, his member arrangement settles everything, as before.
  *
- * Anyone not yet in a family prints as a family of one, and is numbered like any other. The
- * alternative, leaving their family column blank, would mean the numbered families drift out
- * of step with the paper already in his hand; numbering everybody means the booklet is a
- * complete work list from the first reprint of the first morning, before a single family has
- * been created.
+ * Anyone not yet in a family prints after every family, in roll order — the only ordering
+ * nobody had to choose. Interleaving them by door number would mix two orderings — the
+ * surveyor's and the roll's — into one nobody arranged. Dad builds a family for everyone,
+ * even a single person, so in practice there are no solos; the fallback exists so a
+ * straggler still prints somewhere sensible rather than nowhere.
  *
- * This lives in one place because two things have to agree: the PDF and the on-screen family
- * list. When they drift, the app says one number and the paper says another, which is the
- * specific confusion this ordering exists to prevent.
+ * This lives in one place because two things have to agree: the spreadsheet and the
+ * on-screen family list. When they drift, the app says one number and the sheet says
+ * another, which is the specific confusion this ordering exists to prevent.
  */
 object PrintOrder {
 
@@ -33,10 +31,10 @@ object PrintOrder {
     }
 
     /**
-     * Builds the blocks in print order.
-     *
-     * Ties on house number fall back to the lowest electoral serial in the block, which is
-     * the only ordering available that nobody has to choose by hand.
+     * Builds the blocks in print order: families in the arranged order, then everyone
+     * unassigned, house-sorted. Ties within the arranged order fall back to the lowest
+     * door number, then the lowest electoral serial — the same rule as before, now only
+     * reached when two families share a position, which a clean 0..n-1 run never has.
      */
     fun blocks(survey: Survey): List<Block> {
         val familyBlocks = survey.familiesWithMembers.map { fwm ->
@@ -45,36 +43,6 @@ object PrintOrder {
         val soloBlocks = survey.unassigned.map { v ->
             Block(null, listOf(v), "")
         }
-        return (familyBlocks + soloBlocks).sortedWith(BLOCK_ORDER)
-    }
-
-    private val BLOCK_ORDER = Comparator<Block> { a, b ->
-        // A blank house number sorts last: it is a number that could not be read, and an
-        // unreadable number should not push a household to the front of the ward.
-        val ka = keyOf(a)
-        val kb = keyOf(b)
-        val byHouse = compareNaturalKeys(ka.first, kb.first)
-        if (byHouse != 0) return@Comparator byHouse
-        ka.second.compareTo(kb.second)
-    }
-
-    private fun keyOf(b: Block): Pair<LongArray, Int> {
-        val house = b.members.mapNotNull { it.house.trim().takeIf(String::isNotEmpty) }
-            .minWithOrNull(NATURAL_HOUSE_ORDER)
-        val lowest: Int = b.members.minOfOrNull { it.serial } ?: 0
-        val key: LongArray = if (house == null) LongArray(1) { BLANK } else naturalKey(house)
-        return key to lowest
-    }
-
-    /** Sorts after every real house number, however long. */
-    private const val BLANK = Long.MAX_VALUE
-
-    private fun compareNaturalKeys(a: LongArray, b: LongArray): Int {
-        val n = minOf(a.size, b.size)
-        for (i in 0 until n) {
-            val c = a[i].compareTo(b[i])
-            if (c != 0) return c
-        }
-        return a.size.compareTo(b.size)
+        return familyBlocks + soloBlocks
     }
 }

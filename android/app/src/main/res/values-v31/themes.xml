@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- System splash on Android 12 and up: booth green, the ballot mark, no branding
+         image and no extra animation. installSplashScreen needs a library the app
+         deliberately does not carry, so the splash simply lasts until the first frame,
+         which is immediate: nothing here loads over a network. -->
+    <style name="Theme.VoterList" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_mark</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+    </style>
+</resources>

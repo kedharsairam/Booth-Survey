@@ -29,14 +29,14 @@ data class Voter(
     val skipped: Boolean = false,
     /** Null means not in any family. Only ever set by the surveyor's own hand. */
     val familyId: String? = null,
-    /** Position within the family, 0 first. The order printed on the booklet. */
+    /** Position within the family, 0 first. The order printed in the export. */
     val familyOrder: Int = 0,
     /**
      * In the app but absent from the most recent sheet for this booth.
      *
      * Kept rather than deleted, because deleting is not recoverable here and a finalized roll
      * that has quietly dropped somebody should not quietly delete your work on them. But it
-     * has to be visible: if the roll struck them off as dead or moved away, the booklet would
+     * has to be visible: if the roll struck them off as dead or moved away, the sheet would
      * otherwise still send you to their door.
      */
     val notInLatestFile: Boolean = false,
@@ -47,9 +47,9 @@ data class Voter(
     /**
      * Whether the printed door number could not be read.
      *
-     * This no longer groups anyone, so the cost of a bad value is only that the voter sorts
-     * oddly in the booklet. It still gets marked rather than quietly coerced, because a wrong
-     * door number is worth knowing about before you knock.
+     * This no longer orders anyone, so a bad value costs nothing downstream. It still gets
+     * marked rather than quietly coerced, because a wrong door number is worth knowing
+     * about before you knock.
      */
     val houseIsSuspect: Boolean get() = house.isNotBlank() && !HOUSE_OK.matches(house)
 

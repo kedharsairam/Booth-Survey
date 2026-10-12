@@ -1,7 +1,6 @@
 # Booth Survey
 
-An offline Android app and an A4 booklet generator for a door-to-door survey, built from an
-electoral roll.
+An offline Android app for a door-to-door survey, built from an electoral roll.
 
 **The app ships with no voter data in it.** Not in this repository, not in the APK, not on the
 phone until somebody imports a sheet. A list of named voters with their IDs and house numbers
@@ -14,8 +13,8 @@ app bar of all four.
 ## Three rules shape everything
 
 1. **Serial is the hero.** It is the one value the extraction got perfectly, so the app's list
-   is ordered on it. The booklet is ordered on door number instead, so a street is walked in one
-   direction.
+   is ordered on it. Families print in the order you arrange them, so a street is walked the
+   way you walked it, not the way the roll numbers it.
 2. **A family exists only because somebody made one.** Nothing is inferred from the door number.
    A house number in an electoral roll is a printing convention, not a record of who lives where.
 3. **Every field is editable, including the serial.** The roll this was extracted from is a
@@ -24,8 +23,9 @@ app bar of all four.
    keys on, so duplicate serials are survivable.
 
 Nothing happens without being asked for. Creating a voter opens an empty form that is not
-attached to anything and is discarded if you go back; deleting one asks first, from the list row
-or from the voter. There is no undo, because every destructive action is confirmed instead.
+attached to anything and is discarded if you go back; deleting asks first, one voter from
+their screen or many at once from selection, with the count on the question. There is no
+undo, because every destructive action is confirmed instead.
 
 ## Importing
 
@@ -48,7 +48,7 @@ sheet with those four headings and one example row, for somebody starting a list
 roll.
 
 Mandal, town or ward and booth number are asked for at import, remembered afterwards, and
-editable in Settings. They are not in the sheet but they are printed on every booklet page.
+editable in Settings.
 
 ## Booths are kept apart
 
@@ -66,30 +66,45 @@ Importing a booth number that is already present **updates** it rather than repl
 - a **blank cell does not erase** a value already held, so a partial export cannot quietly
   delete names read off the roll
 - anyone in the booth but not in the sheet is **kept and marked**, not deleted. Deleting is not
-  recoverable here, but if the roll struck them off as dead or moved away the booklet would
+  recoverable here, but if the roll struck them off as dead or moved away the sheet would
   otherwise still send you to their door
 
 Re-importing the same roll changes nothing, and says so: "0 added, 0 changed, 1129 already
 matched".
 
+## Voters tab
+
+The list is in serial order with the serial leading every row, and nothing sits above
+it: search lives in the top bar (tap the glass, the title becomes the field), and every
+filter lives in one bottom sheet behind the tune icon, which carries the count of what is
+on. Status, caste, party, address and not-in-the-latest-file combine with the search, and
+everything applies live. Home's search ignores all of it -- "search anyone" means anyone.
+
+Holding a row starts ticking. The bar works on all ticked rows at once: visited, back to
+to-visit, skipped, moved to a family (an existing one, or a new one made of them), or
+removed with the count on the confirmation.
+
+## Families tab
+
+Each card carries its walking number, display only and never exported: 1, 2, 3 down the
+street in the order the sheet will print. Reorder with the grip or the arrows -- the
+arrows stay because a screen reader cannot drag. Inside a family, members drag the same
+way, and the family takes the name of whoever stands first. The detail screen says
+where the family stands ("walking order 2 of 5").
+
 ## Print order
 
-The booklet prints families -- or single people not yet in a family -- by:
-
-1. the **lowest door number** among the members, compared by value rather than as text, so
-   `10-1-5` comes before `10-1-12`
-2. ties broken on the **lowest electoral serial** in the block
-3. within a block, the order **you arranged**, with the up and down arrows
-4. a **blank door number sorts last** and never merges
-
-Nobody is left out: anyone not yet in a family prints as a numbered family of one. Family
-numbers restart at 1 in each booklet and a family is never split across a page.
-
+The spreadsheet prints families in the order **you arranged them** on the Families tab
+-- the street is walked the way you walked it. Within a family, your member arrangement.
+Anyone not yet in a family prints after every family, in roll order: build a family for
+everyone, even one person on their own, and there will be none.
 ## Settings
 
-Three managed lists, shared across every booth -- caste is the same seven categories for a whole
-constituency and area names overlap between neighbouring booths. All three also learn from use,
-so a value typed on a voter is offered next time.
+Booth (rename, import), the survey sheet (blank template export), and the shared lists,
+each in its own section. The three managed lists -- caste is the same seven categories
+for a whole constituency and area names overlap between neighbouring booths -- sit in an
+accordion, one open at a time with the count on the header, instead of three always-open
+walls. All three also learn from use, so a value typed on a voter is offered next time.
 
 Address takes an area name, not a full address.
 
@@ -113,17 +128,21 @@ cp app/build/outputs/apk/debug/app-debug.apk ../dist/voter-survey.apk
 cd android && ~/.local/gradle-8.9/bin/gradle testDebugUnitTest
 ```
 
-Forty-six tests, concentrated on the things that quietly corrupt data:
+Fifty-three unit tests plus a device test, concentrated on the things that quietly corrupt data:
 
 - the reader finds the four columns **by name, not position**, across shared strings and inline
   strings and a sheet that is not `sheet1.xml`; a missing column loads nothing rather than
-  loading blanks
+  loading blanks. The BLO sheet's own headers ("Sl No", "House No", "Voter Name", "EPIC No")
+  are covered.
 - re-importing the same roll changes nothing; renumbering everybody still matches by voter ID; a
   blank cell does not erase; the same voter ID twice does not collapse two people into one
-- print order by value not as text, family at its lowest door number, ties on roll order, blanks
-  last, family never split across a page
+- the arranged family order survives a store round-trip and the spreadsheet rows follow it
+- the list filters combine (status, family, caste, party, not-in-file) and the bulk moves
+  append in roll order
 - door numbers and voter IDs stay text in the spreadsheet
 - the template the app writes is one the app can read back
+- on-device: holding a member's grip past the long-press timeout and pulling it up reorders
+  the family through the real gesture path (`DragTest`, needs a device)
 
 ## Design
 

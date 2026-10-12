@@ -1,11 +1,27 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- A ballot box: a lid, a body, and a slip going in. -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M28,34h52v6h-52z" />
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M32,44h44v34h-44z" />
-    <path android:fillColor="#1B5E20"
-        android:pathData="M48,20h12v16h-12z" />
+    <!-- A ballot box with its slip going in and a tick for done: the lid, the body,
+         the slip through the slot, and the count mark. White on the booth green. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,38h48a4,4 0 0 1 4,4v2h-56v-2a4,4 0 0 1 4,-4z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,48h36a4,4 0 0 1 4,4v24a4,4 0 0 1 -4,4h-36a4,4 0 0 1 -4,-4v-24a4,4 0 0 1 4,-4z" />
+    <group
+        android:rotation="18"
+        android:pivotX="57"
+        android:pivotY="30">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M53,16h8a2,2 0 0 1 2,2v16h-12v-16a2,2 0 0 1 2,-2z" />
+    </group>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1B5E20"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M46,63l7,7l13,-15" />
 </vector>

@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Compose supplies the real theme; this only needs to avoid an ActionBar, because
-         the whole UI is drawn by Compose and a second one would sit above it. -->
-    <style name="Theme.VoterList" parent="android:Theme.Material.Light.NoActionBar" />
+         the whole UI is drawn by Compose and a second one would sit above it. The window
+         background is the splash backdrop, so a cold start opens on booth green instead
+         of a black flash; Android 12 and up replace it with the system splash below. -->
+    <style name="Theme.VoterList" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
+    </style>
 </resources>

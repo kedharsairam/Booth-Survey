@@ -1,4 +1,11 @@
 package com.kraft.voterlist.ui
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.text.BasicText
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,19 +19,23 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -34,10 +45,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,10 +79,18 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
     // and the nav bar leave about 250dp, against roughly 375dp of panel, tiles and buttons. It
     // had lost this modifier in an earlier edit, so in landscape everything below the big
     // number was simply clipped and New family / New voter could not be reached at all.
+    val scroll = rememberScrollState()
+    val focus = LocalFocusManager.current
+    // Same as the voters list: scrolling or tapping away hands focus back, so the keyboard
+    // never outstays the search that raised it.
+    LaunchedEffect(scroll.isScrollInProgress) {
+        if (scroll.isScrollInProgress) focus.clearFocus()
+    }
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
+            .pointerInput(focus) { detectTapGestures(onTap = { focus.clearFocus() }) }
             .padding(horizontal = Space.lg),
     ) {
         if (!s.hasBooth) {
@@ -86,6 +108,17 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                 leadingIcon = {
                     Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
+                // A way out that is one tap. Without it the only route back to the day's
+                // list was to select the whole line and delete it, which needs two hands on
+                // a phone held in one. OutlinedTextField gives trailingIcon the default
+                // 48dp button, which is left as it is -- a smaller X here is a miss.
+                trailingIcon = {
+                    if (s.query.isNotBlank()) {
+                        IconButton(onClick = { vm.setQuery("") }) {
+                            Icon(Icons.Default.Close, "Clear search")
+                        }
+                    }
+                },
                 singleLine = true,
                 shape = MaterialTheme.shapes.large,
             )
@@ -95,17 +128,17 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
             } else {
                 Spacer(Modifier.height(Space.md))
 
-                // One card holding the number and the tiles, taking the space between them
-                // and the actions. Left as bare text on the background that space read as a
-                // hole in the screen; inside a card it reads as a panel, which is what it is.
+                // The morning question -- where do I stand -- answered in one panel: how many
+                // are left, how far along that is, and the four counts that make it up. Left
+                // as bare text on the background that space read as a hole in the screen;
+                // inside a card it reads as a panel, which is what it is.
+                //
+                // It must not fillMaxSize: this Column scrolls, so the height constraint
+                // arriving here is infinite, and filling it made the card swallow the whole
+                // screen -- "New family" and "New voter" ended up below the fold and
+                // unreachable. weight(1f) is wrong for the same reason in the other
+                // direction: in landscape "whatever is left over" was nothing.
                 Card(
-                    // Wraps its content, with a floor so the panel is never a thin sliver.
-                    //
-                    // It must not fillMaxSize: this Column scrolls, so the height constraint
-                    // arriving here is infinite, and filling it made the card swallow the whole
-                    // screen -- "New family" and "New voter" ended up below the fold and
-                    // unreachable. weight(1f) is wrong for the same reason in the other
-                    // direction: in landscape "whatever is left over" was nothing.
                     Modifier.fillMaxWidth().heightIn(min = BoothMetrics.HomeCardMin),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -118,41 +151,84 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                     ) {
                         // The number that matters, given the room to be read across the street.
                         Text(
-                            s.unassignedCount.toString(),
-                            style = MaterialTheme.typography.displaySmall,
-                            color = if (s.unassignedCount == 0) Status.done
+                            if (s.remainingCount == 0) "All visited"
+                            else "${s.remainingCount} left to visit",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = if (s.remainingCount == 0) Status.done
                             else MaterialTheme.colorScheme.onBackground,
                         )
+                        Spacer(Modifier.height(Space.xs))
                         Text(
-                            if (s.unassignedCount == 1) "person not yet in a family"
-                            else "people not yet in a family",
-                            style = MaterialTheme.typography.titleMedium,
+                            "${s.doneCount} of ${s.totalCount} visited" +
+                                if (s.familyCount == 1) "  ·  1 family"
+                                else "  ·  ${s.familyCount} families",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-
+                        // Skipped is not finished, and the headline above no longer hides it
+                        // -- so say it here, where he reads before deciding to pack up.
+                        if (s.skippedCount > 0) {
+                            Text(
+                                "${s.skippedCount} skipped — still to come back to",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Status.pending,
+                            )
+                        }
+                        Spacer(Modifier.height(Space.md))
+                        // A bar rather than a fourth number: progress reads at a glance, and
+                        // the tiles below already carry the exact counts.
+                        LinearProgressIndicator(
+                            progress = { if (s.totalCount == 0) 0f else s.doneCount.toFloat() / s.totalCount },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         Spacer(Modifier.height(Space.lg))
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                             CountTile(
                                 Modifier.weight(1f),
-                                s.familyCount.toString(),
-                                if (s.familyCount == 1) "family" else "families",
-                                MaterialTheme.colorScheme.onSurface,
-                            )
-                            CountTile(
-                                Modifier.weight(1f),
                                 s.remainingCount.toString(),
-                                // "to visit" rather than "houses left": three tiles across a
-                                // phone in landscape at a large font, and "houses left" was
-                                // breaking into "house / s left" while the number beside it
-                                // said 1129.
                                 "to visit",
                                 if (s.remainingCount == 0) Status.done else Status.pending,
                             )
                             CountTile(
                                 Modifier.weight(1f),
-                                s.totalCount.toString(),
-                                "voters",
+                                s.doneCount.toString(),
+                                "visited",
                                 MaterialTheme.colorScheme.onSurface,
+                            )
+                            CountTile(
+                                Modifier.weight(1f),
+                                s.unassignedCount.toString(),
+                                // Short words: three tiles across a phone in landscape at a
+                                // large font, and anything longer breaks mid-word.
+                                "alone",
+                                if (s.unassignedCount == 0) Status.done
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+                if (s.notInFileCount > 0) {
+                    Spacer(Modifier.height(Space.md))
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Column(Modifier.padding(Space.lg)) {
+                            Text(
+                                if (s.notInFileCount == 1) "1 person is not in the latest file"
+                                else "${s.notInFileCount} people are not in the latest file",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Spacer(Modifier.height(Space.xs))
+                            Text(
+                                "They stay on the list. Find them under Voters with the " +
+                                    "Not in file filter.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
                             )
                         }
                     }
@@ -204,8 +280,9 @@ private fun NoBoothYet(modifier: Modifier) {
         )
         Spacer(Modifier.height(Space.lg))
         Text(
-            "The sheet needs four columns: serial, voter id, name, house number. Any order. " +
-                "If you do not have one yet, export the blank template from Settings.",
+            // It used to end "export the blank template from Settings" -- and there is no
+            // such button, so it sent him looking for one that does not exist.
+            "The sheet needs four columns: serial, voter id, name, house number. Any order.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -233,24 +310,58 @@ internal fun CountTile(
     accent: androidx.compose.ui.graphics.Color,
 ) {
     Card(
-        modifier.semantics(mergeDescendants = true) { contentDescription = "$big $label" },
+        // clearAndSetSemantics, not semantics(mergeDescendants = true): merging left the
+        // two child Texts in the tree as stops of their own, so a screen reader said
+        // "12 to visit" and then "12" and then "to visit". This sets the label once and
+        // drops the children, which is what the card is for.
+        modifier.clearAndSetSemantics { contentDescription = "$big $label" },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(Modifier.padding(Space.md)) {
-            Text(big, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = accent)
+            // One line, and it steps down rather than wrapping. At a large font size a
+            // four-digit count was breaking across two lines -- "121 / 5" -- in the tile
+            // that answers the only question he opens the app to ask.
+            AutoSizeNumber(big, accent)
             Spacer(Modifier.height(Space.xs))
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                // One line. "families" was breaking into "familie / s" at a large font, which
-                // is worse than a slightly smaller word.
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                // Allowed to wrap. A tile is a card and can grow, and "to v..." at a large
+                // font tells him less than "to" / "visit" over two lines.
             )
         }
     }
+}
+
+/**
+ * A count that stays on one line and stays whole.
+ *
+ * Stepping the size down on the digit count was not enough: at a large font a four-digit
+ * count still did not fit a third of the screen and was ellipsised to "1...", which is
+ * worse than the line-wrap it replaced -- it is not a smaller number, it is a different
+ * number. This measures the text and steps the size down until the whole of it fits, so
+ * the day's remaining work is never abbreviated.
+ */
+@Composable
+private fun AutoSizeNumber(big: String, accent: androidx.compose.ui.graphics.Color) {
+    var size by remember { mutableFloatStateOf(26f) }
+    BasicText(
+        text = big,
+        maxLines = 1,
+        softWrap = false,
+        onTextLayout = { r ->
+            if (r.hasVisualOverflow && size > 12f) size -= 1f
+        },
+        modifier = Modifier.fillMaxWidth(),
+        style = TextStyle(
+            fontSize = size.sp,
+            lineHeight = (size * 1.2f).sp,
+            fontWeight = FontWeight.Bold,
+            color = accent,
+        ),
+    )
 }
 
 @Composable
@@ -292,7 +403,7 @@ internal fun ActionButton(
 
 @Composable
 private fun SearchResults(s: UiState, vm: SurveyViewModel) {
-    val hits = s.visible
+    val hits = s.searchHits
     Spacer(Modifier.height(Space.md))
     Text(
         when (hits.size) {
@@ -304,8 +415,12 @@ private fun SearchResults(s: UiState, vm: SurveyViewModel) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(Modifier.height(Space.sm))
-    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()) {
-        items(hits.take(60), key = { it.id }) { v -> SearchRow(v, s, vm) }
+    // A plain Column, not a LazyColumn: this already sits inside the screen's scrolling
+    // Column, and a scrolling list inside an unbounded scroller measures against infinity
+    // and crashes the app the moment a search matches anything. Sixty simple rows compose
+    // cheaply enough that laziness buys nothing here.
+    Column(Modifier.fillMaxWidth()) {
+        hits.take(60).forEach { v -> SearchRow(v, s, vm) }
     }
 }
 
@@ -366,8 +481,16 @@ internal fun StatusChip(label: String, colour: androidx.compose.ui.graphics.Colo
         Text(
             label,
             Modifier.padding(horizontal = Space.sm, vertical = KraftSpacing.Spacing4),
-            style = MaterialTheme.typography.labelSmall,
+            // bodySmall, not labelSmall. At 11sp these were the smallest text in the app,
+            // and they carry the one thing he is scanning a long list for. One step up, not
+            // further: any larger and the chip stops fitting beside a name.
+            style = MaterialTheme.typography.bodySmall,
             color = Status.onStatus,
+            // One line, ellipsised. These sit in a row that measures itself from the name
+            // beside them, and without this a long label such as "duplicate ID" wrapped and
+            // made that one row taller than every other row on the screen.
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -385,7 +508,8 @@ internal fun DupBadge() {
         Text(
             "DUPLICATE",
             Modifier.padding(horizontal = Space.xs + KraftSpacing.BorderWidth, vertical = KraftSpacing.Spacing2),
-            style = MaterialTheme.typography.labelSmall,
+            // As the chip next to it: a warning he is meant to read, not a caption.
+            style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
             color = Status.onStatus,
         )

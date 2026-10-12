@@ -32,7 +32,19 @@ import java.io.OutputStream
  * A file that will not parse is moved aside rather than thrown away, and the app continues on
  * the rest. Letting the exception out would mean refusing to start with no way back in.
  */
-class Store(private val context: Context) {
+class Store(private val context: Context, private val root: File? = null) {
+
+    /**
+     * Where everything lives.
+     *
+     * Defaults to the app's own files directory, which is right for the app and wrong for
+     * anything else. A test that builds a ViewModel from the *app's* context therefore gets
+     * the surveyor's real store -- and a drag test whose setup clears the store to start
+     * from a known state will clear a real booth off a real phone, which is exactly what
+     * happened. Passing a root lets a test point the whole store somewhere disposable, so
+     * the failure is a directory rather than somebody's day's work.
+     */
+    private val base: File get() = root ?: context.filesDir
 
     /**
      * Serialises every write.
@@ -48,9 +60,9 @@ class Store(private val context: Context) {
      */
     private val writeLock = Mutex()
 
-    private val boothsDir: File get() = File(context.filesDir, "booths")
-    private val indexFile: File get() = File(context.filesDir, "booths.json")
-    private val listsFile: File get() = File(context.filesDir, "lists.json")
+    private val boothsDir: File get() = File(base, "booths")
+    private val indexFile: File get() = File(base, "booths.json")
+    private val listsFile: File get() = File(base, "lists.json")
 
     /** The booth index: enough to draw the selector without reading every voter's file. */
     data class Index(
@@ -89,11 +101,26 @@ class Store(private val context: Context) {
         }
     }
 
+    /**
+     * A booth that could not be read, and where the copy that was kept goes.
+     *
+     * Set instead of returning an empty booth. Returning one made a corrupt file look exactly
+     * like a phone that had never been used -- the "No voters list yet" screen -- and the next
+     * import then merged against that empty booth and wrote over the file. A day's work
+     * survived only as a timestamped file in the data folder that nothing ever mentions.
+     */
+    var unreadableBooth: Pair<String, String>? = null
+
     /** Reads one booth's voters and families, or an empty booth if its file is unreadable. */
     suspend fun loadBooth(id: String): Booth = withContext(Dispatchers.IO) {
         val f = File(boothsDir, "$id.json")
         if (!f.exists()) return@withContext Booth(id = id, boothNo = "")
-        val root = readJson(f) ?: return@withContext Booth(id = id, boothNo = "")
+        val root = readJson(f)
+        if (root == null) {
+            val kept = File(boothsDir, "$id-unreadable.json")
+            unreadableBooth = id to (if (kept.exists()) kept.name else "another file")
+            return@withContext Booth(id = id, boothNo = "")
+        }
         parseBooth(root)
     }
 
@@ -185,11 +212,18 @@ class Store(private val context: Context) {
         }
         val families = root.optJSONArray("families")?.let { a ->
             (0 until a.length()).map { i ->
-                // Only the id. A label may be present in a file written before family names
-                // were derived, and it is deliberately ignored: a stored name has to be kept
-                // in step with the arrangement by hand and would eventually be wrong with
-                // nothing to say so.
-                Family(a.getJSONObject(i).optString("id").ifBlank { Voter.newId() })
+                // Only the id and the position. A label may be present in a file written
+                // before family names were derived, and it is deliberately ignored: a stored
+                // name has to be kept in step with the arrangement by hand and would
+                // eventually be wrong with nothing to say so.
+                //
+                // Files written before positions existed carry no order: they take their
+                // place in the stored list, which is creation order. That keeps the old
+                // arrangement as the starting point rather than scrambling it, and the first
+                // move assigns the clean run from there.
+                val o = a.getJSONObject(i)
+                val stored = if (o.has("order")) o.optInt("order") else i
+                Family(o.optString("id").ifBlank { Voter.newId() }, stored)
             }
         } ?: emptyList()
         return Booth(
@@ -234,7 +268,10 @@ class Store(private val context: Context) {
             }
         })
         put("families", JSONArray().apply {
-            for (f in booth.families) put(JSONObject().apply { put("id", f.id) })
+            for (f in booth.families) put(JSONObject().apply {
+                put("id", f.id)
+                put("order", f.order)
+            })
         })
     }.toString()
 
@@ -258,7 +295,7 @@ class Store(private val context: Context) {
     private fun readJson(f: File): JSONObject? {
         val text = runCatching { f.readText() }.getOrNull() ?: return null
         return runCatching { JSONObject(text) }.getOrElse { e ->
-            val kept = File(f.parentFile, "${f.nameWithoutExtension}-unreadable-${System.currentTimeMillis()}.json")
+            val kept = File(f.parentFile, "${f.nameWithoutExtension}-unreadable.json")
             runCatching { f.renameTo(kept) }
             Log.e(TAG, "${f.name} unreadable (${e.message}); kept as ${kept.name}", e)
             null
@@ -308,8 +345,8 @@ class Store(private val context: Context) {
  * four-letter string "null", because that is what `JSONObject.NULL.toString()` produces. So a
  * plain `optString("familyId").ifBlank { null }` reads a JSON null as the family id "null",
  * which put all 1129 seeded voters into a family called "null" that does not exist -- and
- * since the booklet prints families from the family list, every one of them disappeared from
- * the export while the app still showed 1129 on screen.
+ * since the export prints families from the family list, every one of them disappeared from
+ * the sheet while the app still showed 1129 on screen.
  */
 internal fun JSONObject.stringOrNull(key: String): String? =
     if (isNull(key)) null else optString(key).ifBlank { null }

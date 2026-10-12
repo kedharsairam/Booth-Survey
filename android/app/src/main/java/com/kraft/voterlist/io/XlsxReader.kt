@@ -51,9 +51,9 @@ object XlsxReader {
         val usable: Boolean get() = rows.isNotEmpty() && missingColumns.isEmpty()
     }
 
-    private val SERIAL = listOf("serial", "serialno", "serialnumber")
-    private val VOTER_ID = listOf("voterid", "voteridno", "voteridnumber", "id")
-    private val NAME = listOf("name", "fullname", "nameofvoter", "nameofelector")
+    private val SERIAL = listOf("serial", "serialno", "serialnumber", "slno")
+    private val VOTER_ID = listOf("voterid", "voteridno", "voteridnumber", "id", "epicno", "epic")
+    private val NAME = listOf("name", "fullname", "nameofvoter", "nameofelector", "votername")
     private val HOUSE = listOf("housenumber", "house", "houseno", "doorno", "door", "doornumber")
 
     private val REQUIRED = listOf(
@@ -68,11 +68,17 @@ object XlsxReader {
     fun read(input: InputStream): Result {
         val parts = unzip(input)
         val shared = parseSharedStrings(parts["xl/sharedStrings.xml"])
+        // What goes in missingColumns here is printed after "The sheet is missing: ",
+        // so each entry has to finish that sentence on its own. "a worksheet" and
+        // "any data" were what stood there before, and both read as half a sentence
+        // about something he cannot see in a file he cannot open.
         val sheetPath = firstSheetPath(parts)
-            ?: return Result(emptyList(), listOf("a worksheet"), 0, 0, 0)
-        val sheetXml = parts[sheetPath] ?: return Result(emptyList(), listOf("a worksheet"), 0, 0, 0)
+            ?: return Result(emptyList(), listOf("any sheet at all"), 0, 0, 0)
+        val sheetXml = parts[sheetPath] ?: return Result(emptyList(), listOf("any sheet at all"), 0, 0, 0)
         val grid = parseSheet(sheetXml, shared)
-        if (grid.isEmpty()) return Result(emptyList(), listOf("any data"), 0, 0, 0)
+        // It opened as a sheet but holds nothing at all: no people, so not even a heading
+        // row to find the four names in.
+        if (grid.isEmpty()) return Result(emptyList(), listOf("any people listed"), 0, 0, 0)
 
         val header = grid.first()
         val columnFor = HashMap<String, Int>()

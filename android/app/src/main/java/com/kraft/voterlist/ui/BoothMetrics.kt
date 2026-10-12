@@ -16,10 +16,22 @@ import androidx.compose.ui.unit.dp
  */
 object BoothMetrics {
 
+    /**
+     * The smallest thing a fingertip is asked to hit.
+     *
+     * The shared token is 44dp, from Apple's guidance. Android's floor is 48dp, and passing
+     * `Modifier.size(44.dp)` to a Material button overrides the 48dp minimum it would
+     * otherwise supply -- so every call site was actively below the platform target rather
+     * than merely not gaining from it. The user this app is for is over sixty, so the
+     * platform's figure is the one that applies here.
+     */
+    val TouchTarget = 48.dp
+
     /** Input field height, shared by voter edit, family, and import screens. */
     val FieldHeight = 52.dp
 
-    /** Family list height: the scroll region for a booth's families. */
+    /** Capped scroll region: the member picker list and the filter sheet's panes. Tall enough
+     * to choose from, short enough that the action below it stays on screen. */
     val FamilyListHeight = 340.dp
 
     /** Home card minimum: keeps its shape while booth data loads. */

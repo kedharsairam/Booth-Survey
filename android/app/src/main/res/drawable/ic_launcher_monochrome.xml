@@ -1,0 +1,27 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Single-colour twin of the launcher foreground, for themed icons. The system
+         tints it; every shape is opaque black so the silhouette survives any tint. -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M30,38h48a4,4 0 0 1 4,4v2h-56v-2a4,4 0 0 1 4,-4z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M36,48h36a4,4 0 0 1 4,4v24a4,4 0 0 1 -4,4h-36a4,4 0 0 1 -4,-4v-24a4,4 0 0 1 4,-4z" />
+    <group
+        android:rotation="18"
+        android:pivotX="57"
+        android:pivotY="30">
+        <path
+            android:fillColor="#000000"
+            android:pathData="M53,16h8a2,2 0 0 1 2,2v16h-12v-16a2,2 0 0 1 2,-2z" />
+    </group>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M46,63l7,7l13,-15" />
+</vector>

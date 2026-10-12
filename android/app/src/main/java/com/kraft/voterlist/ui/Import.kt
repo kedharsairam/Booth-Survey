@@ -1,13 +1,19 @@
 package com.kraft.voterlist.ui
 
+import androidx.compose.foundation.layout.heightIn
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imeNestedScroll
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,6 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.kraft.ui.tokens.KraftSpacing
 
@@ -44,8 +53,8 @@ import com.kraft.ui.tokens.KraftSpacing
  *      covers the one file you chose and nothing else.
  *   2. **Read it and say what is in it.** Row count, how many have no name, how many have no
  *      door number. Nothing is written yet, so a wrong file costs a report and nothing more.
- *   3. **Ask which booth it is.** Mandal, town or ward, booth number. Not in the sheet, printed
- *      on every booklet page, and the thing that decides whether this import creates a booth or
+ *   3. **Ask which booth it is.** Mandal, town or ward, booth number. Not in the sheet, and
+ *      the thing that decides whether this import creates a booth or
  *      updates one.
  *   4. **Confirm, naming the consequence.** If the booth is already here, the prompt says how
  *      many people are in it, how many you have visited, and exactly what an update does and
@@ -62,6 +71,7 @@ fun ImportScreen(
     s: UiState,
     onPickFile: () -> Unit,
     onClose: () -> Unit,
+    onImported: () -> Unit,
 ) {
     when (val step = s.importStep) {
         ImportStep.Reading -> Column(
@@ -71,7 +81,7 @@ fun ImportScreen(
         ) {
             CircularProgressIndicator()
             Spacer(Modifier.height(Space.lg))
-            Text("Reading the sheet", style = MaterialTheme.typography.titleMedium)
+            Text("Reading the file", style = MaterialTheme.typography.titleMedium)
         }
 
         // Reached when the file picker is cancelled. It keeps the app bar, so there is a
@@ -100,10 +110,14 @@ fun ImportScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("Choose the spreadsheet", style = MaterialTheme.typography.titleMedium)
+                Text("What the file must have", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(Space.sm))
                 Text(
-                    "It needs four columns: serial, voter id, name, house number.",
+                    // "Columns" is a word about the program that made the file, not about
+                    // the paper in his hand, so the four names are given as what he must
+                    // write. The names themselves stay exactly as the app matches them.
+                    "The file needs four labels at the top: serial, voter id, name, " +
+                        "house number.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -120,10 +134,10 @@ fun ImportScreen(
         )
 
         is ImportStep.Done -> AlertDialog(
-            onDismissRequest = onClose,
+            onDismissRequest = onImported,
             title = { Text("Done") },
             text = { Text(step.message) },
-            confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+            confirmButton = { TextButton(onClick = onImported) { Text("See the list") } },
         )
 
         is ImportStep.NeedsDetails -> DetailsStep(vm, s, step, onPickFile, onClose)
@@ -131,6 +145,7 @@ fun ImportScreen(
 }
 
 @androidx.compose.material3.ExperimentalMaterial3Api
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun DetailsStep(
     vm: SurveyViewModel,
@@ -145,6 +160,17 @@ private fun DetailsStep(
     var ward by remember { mutableStateOf(remembered.third) }
     var label by remember { mutableStateOf("") }
     var confirming by remember { mutableStateOf(false) }
+    // Next on the keyboard walks down the form; Done on the last field puts it away.
+    // Without this every field offers Done, which strands the last field behind the
+    // keyboard with no way to reach it but scrolling past what you are typing.
+    val focus = LocalFocusManager.current
+    // The column's own scroll state, shared with the field tracker below: focusing a
+    // field animates to its recorded position, so the last field cannot end up typed
+    // blind behind the keyboard.
+    val scroll = rememberScrollState()
+    val fields = rememberFieldScroller(scroll)
+    val next = KeyboardOptions(imeAction = ImeAction.Next)
+    val nextAction = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down); Unit })
 
     val clash = remember(boothNo, s.index) {
         s.index.booths.firstOrNull { it.boothNo.equals(boothNo.trim(), ignoreCase = true) }
@@ -169,17 +195,22 @@ private fun DetailsStep(
             Modifier
                 .padding(pad)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
+                .imeNestedScroll()
+                .imePadding()
                 .padding(horizontal = Space.lg),
         ) {
-            Note("What is in the file", step.summary, warn = false)
+            Note("What is in this file", step.summary, warn = false)
             Spacer(Modifier.height(Space.lg))
 
             Text("Which booth is it?", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(Space.xs))
             Text(
-                "These are not in the sheet. They are printed on every booklet page, and the " +
-                    "booth number is what tells booths apart in this app.",
+                // The file does not say which booth these people belong to, so he has to.
+                // The old second half explained how the app's own list of booths was keyed,
+                // which is a fact about the program and no help to him at all.
+                "The file does not say which booth these people belong to. " +
+                    "Write it here, so you know later which booth they are in.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -189,6 +220,8 @@ private fun DetailsStep(
                 value = boothNo,
                 onValueChange = { boothNo = it },
                 label = { Text("Booth number") },
+                keyboardOptions = next,
+                keyboardActions = nextAction,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
@@ -199,6 +232,8 @@ private fun DetailsStep(
                 value = mandal,
                 onValueChange = { mandal = it },
                 label = { Text("Mandal") },
+                keyboardOptions = next,
+                keyboardActions = nextAction,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
@@ -209,6 +244,8 @@ private fun DetailsStep(
                 value = ward,
                 onValueChange = { ward = it },
                 label = { Text("Town / ward") },
+                keyboardOptions = next,
+                keyboardActions = nextAction,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
@@ -219,6 +256,8 @@ private fun DetailsStep(
                 value = label,
                 onValueChange = { label = it },
                 label = { Text("Name to show (optional)") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
                 placeholder = { Text("Booth ${boothNo.ifBlank { "108" }}") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -253,7 +292,7 @@ private fun DetailsStep(
                     else vm.confirmImport(boothNo, mandal, ward, label)
                 },
                 enabled = boothNo.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(BoothMetrics.FieldHeight),
+                modifier = Modifier.fillMaxWidth().heightIn(min = BoothMetrics.FieldHeight),
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Text(if (clash != null) "Update Booth ${clash.boothNo}" else "Import")

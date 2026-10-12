@@ -137,6 +137,29 @@ class XlsxReaderTest {
     }
 
     @Test
+    fun `the BLO sheet headers are recognised`() {
+        // The actual roll extract: "Sl No | House No | Voter Name | EPIC No", in that order.
+        // Three of the four normalised to spellings the reader did not know, so the file
+        // that matters most is the one that would have been refused outright.
+        // The name below is the common noun for "voter", not a person's name, and the EPIC
+        // is zeros: this test proves Telugu script flows through, using nothing real.
+        val r = read(
+            sheet(
+                listOf(
+                    listOf("Sl No", "House No", "Voter Name", "EPIC No"),
+                    listOf("1", "96-3-3/5", "ఓటరు", "WQQ0000001"),
+                )
+            )
+        )
+        assertTrue(r.missingColumns.isEmpty())
+        assertEquals(1, r.rows.size)
+        assertEquals(1, r.rows[0].serial)
+        assertEquals("WQQ0000001", r.rows[0].voterId)
+        assertEquals("ఓటరు", r.rows[0].name)
+        assertEquals("96-3-3/5", r.rows[0].house)
+    }
+
+    @Test
     fun `a missing column is named rather than silently filled`() {
         val r = read(
             sheet(
@@ -221,7 +244,7 @@ class XlsxReaderTest {
     fun `blanks and unreadable serials are counted for the summary`() {
         // The import tells you what looked wrong rather than loading it quietly, because a
         // sheet that silently lost three names is a sheet you will not notice until the
-        // booklet is printed.
+        // the sheet is written.
         val r = read(
             sheet(
                 listOf(

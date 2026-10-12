@@ -15,8 +15,14 @@ package com.kraft.voterlist.data
  * Members are not stored here either. They are the voters whose `familyId` matches, so a
  * person cannot be in two families, and deleting a family is a matter of clearing the field on
  * its members rather than reconciling two copies of a list that has drifted apart.
+ *
+ * [order] is the family's position in the surveyor's walking order, 0 first. Set with the
+ * same up and down arrows as members, for the same one-handed reason. A family created
+ * later goes last; moving one closes the gap like members do, so the run stays a clean
+ * 0..n-1. The spreadsheet prints in this order, and the family screen
+ * shows it, so the three cannot disagree.
  */
-data class Family(val id: String)
+data class Family(val id: String, val order: Int = -1)
 
 /**
  * One booth's voters and families.
@@ -45,7 +51,7 @@ data class Booth(
     val done: Int get() = voters.count { it.isDone }
     val notInFile: Int get() = voters.count { it.notInLatestFile }
 
-    /** What the booklet header prints, taken from this booth rather than from a constant. */
+    /** The booth title shown in the app, taken from this booth rather than from a constant. */
     val displayTitle: String get() = label.ifBlank { "Booth $boothNo" }
 
     /** Families with their members in the surveyor's arranged order. */
@@ -54,13 +60,48 @@ data class Booth(
         families.mapNotNull { f ->
             val members = byFamily[f.id]?.sortedBy { it.familyOrder } ?: return@mapNotNull null
             FamilyWithMembers(f, members)
-        }.sortedWith(compareBy({ it.sortKey }, { it.lowestSerial }))
+        }.sortedWith(compareBy({ it.family.order }, { it.sortKey }, { it.lowestSerial }))
     }
 
     /** Everyone not in a family, in roll order. */
     val unassigned: List<Voter> by lazy { voters.filter { it.familyId == null }.sortedBy { it.serial } }
 
     fun asSurvey(lists: Lists = Lists()) = Survey(this, lists)
+
+    /**
+     * Drops families nobody is in. Bulk moves and deletes can empty one, and an empty family
+     * is invisible everywhere -- never printed, never listed -- with no way to notice it
+     * accumulating. Same reason closing an emptied family drops it.
+     */
+    fun pruned(): Booth =
+        if (families.all { f -> voters.any { it.familyId == f.id } }) this
+        else copy(families = families.filter { f -> voters.any { it.familyId == f.id } })
+
+    /**
+     * Drops the given voters. Families they were in stay standing with whoever is left;
+     * deleting one member is never a reason to lose the household.
+     */
+    fun withoutVoters(ids: Set<String>): Booth =
+        copy(voters = voters.filterNot { it.id in ids })
+
+    /** Sets the visited/skipped state on the given voters, leaving everything else alone. */
+    fun withVisitState(ids: Set<String>, visited: Boolean, skipped: Boolean): Booth =
+        copy(voters = voters.map {
+            if (it.id in ids) it.copy(visited = visited, skipped = skipped) else it
+        })
+
+    /**
+     * Moves the given voters into [familyId], appended after the members already there in
+     * roll order. Movers keep nothing of their old position: like [SurveyViewModel.addMember]
+     * they go to the end, and the surveyor arranges from there.
+     */
+    fun withFamily(ids: Set<String>, familyId: String): Booth {
+        var order = voters.count { it.familyId == familyId }
+        val moving = voters.filter { it.id in ids }.sortedBy { it.serial }.map { it.id }.toSet()
+        return copy(voters = voters.map {
+            if (it.id in moving) it.copy(familyId = familyId, familyOrder = order++) else it
+        })
+    }
 }
 
 /**
@@ -89,11 +130,12 @@ data class FamilyWithMembers(
         get() = head?.name?.trim()?.takeIf { it.isNotEmpty() }?.let { "$it family" } ?: "Empty family"
 
     /**
-     * Sort key for the booklet: the lowest door number among the members.
+     * Tiebreak when two families share a position: the lowest door number among the members.
      *
      * A family does not have to sit at one door number -- people move, families split, the
-     * roll disagrees with itself -- and when that happens the lowest one leads, so the family
-     * prints where someone looking for that street expects to find it.
+     * roll disagrees with itself -- and a clean 0..n-1 run never ties, so this only settles
+     * files written by hand. Also shown on the family card, so the street is visible at a
+     * glance.
      */
     val sortKey: String
         get() = members.mapNotNull { it.house.trim().takeIf(String::isNotEmpty) }
@@ -126,23 +168,35 @@ data class Survey(
  */
 data class Lists(
     val castes: List<String> = DEFAULT_CASTES,
+    val subCastes: List<String> = emptyList(),
     val addresses: List<String> = emptyList(),
     val parties: List<String> = emptyList(),
 ) {
     fun forKind(kind: Kind): List<String> = when (kind) {
         Kind.CASTE -> castes
+        Kind.SUBCASTE -> subCastes
         Kind.ADDRESS -> addresses
         Kind.PARTY -> parties
     }
 
     fun with(kind: Kind, values: List<String>): Lists = when (kind) {
         Kind.CASTE -> copy(castes = values)
+        Kind.SUBCASTE -> copy(subCastes = values)
         Kind.ADDRESS -> copy(addresses = values)
         Kind.PARTY -> copy(parties = values)
     }
 
+    /**
+     * The four vocabularies, one per free-text column the form gives.
+     *
+     * Sub caste is here because the form has its own column for it, so a person has two
+     * things to say and a shared list for only one of them leaves him typing the other at
+     * every door. The order is the form's own column order: caste, sub caste, address,
+     * party.
+     */
     enum class Kind(val title: String, val hint: String) {
         CASTE("Caste", "The categories this constituency uses. Everybody is in exactly one."),
+        SUBCASTE("Sub caste", "A finer group inside the caste. Its own column on the form."),
         ADDRESS("Current address", "An area name, not a full address. One line on the form."),
         PARTY("Party", "A short fixed set is quicker than typing."),
     }

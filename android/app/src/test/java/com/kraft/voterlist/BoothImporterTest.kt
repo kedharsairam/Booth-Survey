@@ -126,7 +126,7 @@ class BoothImporterTest {
     @Test
     fun `someone in the app but not in the sheet is kept and marked`() {
         // Kept because deleting is not recoverable here. Marked because if the roll struck
-        // them off as dead or moved away, the booklet would otherwise still send you to their
+        // them off as dead or moved away, the sheet would otherwise still send you to their
         // door.
         val booth = existing(
             voter(1, "W1", "HEMA", "10-1-1"),

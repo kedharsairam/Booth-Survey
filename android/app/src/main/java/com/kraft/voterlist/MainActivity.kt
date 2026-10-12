@@ -22,7 +22,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
-import java.time.LocalDate
 
 /**
  * The app.
@@ -75,10 +74,21 @@ class MainActivity : ComponentActivity() {
                         } ?: error("could not open the chosen file")
                     }
                 }.onSuccess {
-                    vm.say("Saved")
+                    // Named, and told where it went. "Saved" alone does not tell a surveyor
+                    // whether to look in Downloads or somewhere else, after an afternoon's work.
+                    vm.say(
+                        "Saved. Look for the file in the folder you chose — " +
+                            "Downloads is usually it.",
+                    )
                 }.onFailure {
                     Log.e(TAG, "export failed", it)
-                    vm.say("Could not write the file: ${it.message}")
+                    // Plain words. The exception's own message is a class name and a file
+                    // path -- "java.io.FileNotFoundException: /storage/emulated/0/..."
+                    // -- which tells him nothing about what to do differently.
+                    vm.say(
+                        "Could not save the file. This usually means that folder is not " +
+                            "writable. Try choosing Downloads, and check there is free space.",
+                    )
                 }
             }
         }
@@ -131,35 +141,6 @@ class MainActivity : ComponentActivity() {
                 vm = vm,
                 busy = busy,
                 onPickImportFile = { pickImport.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv", "text/comma-separated-values", "application/octet-stream")) },
-                onExportTemplate = {
-                    handOver(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "voters-template.xlsx",
-                    ) { out -> XlsxExporter.writeTemplate(out) }
-                },
-                onExportPdf = { onlyPending ->
-                    handOver("application/pdf", "booklet-${LocalDate.now()}.pdf") { out ->
-                        // The booth and its print order are read here, off the UI thread,
-                        // rather than out of Compose state: the export runs after the picker
-                        // closes, by which time the composition may be gone.
-                        val booth = vm.activeBooth()
-                        val only = if (onlyPending) booth.copy(
-                            voters = booth.voters.filter { !it.isDone },
-                            families = booth.families.filter { f ->
-                                booth.voters.any { it.familyId == f.id && !it.isDone }
-                            },
-                        ) else booth
-                        PdfExporter.write(
-                            out,
-                            PrintOrder.blocks(Survey(only, vm.activeLists())),
-                            PdfExporter.Options(
-                                mandal = booth.mandal,
-                                townWard = booth.townWard,
-                                boothNo = booth.boothNo,
-                            ),
-                        )
-                    }
-                },
                 onExportXlsx = { onlyPending ->
                     handOver(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -168,9 +149,38 @@ class MainActivity : ComponentActivity() {
                         val booth = vm.activeBooth()
                         XlsxExporter.write(
                             out,
-                            if (onlyPending) booth.copy(voters = booth.voters.filter { !it.isDone })
+                            // !visited, not !isDone. One checkbox drove two files and they
+                            // did not agree: the spreadsheet dropped anyone visited or
+                            // skipped, while the booklet kept a whole household if anybody
+                            // in it was unfinished -- so he ticked one box, got two files,
+                            // and the people were not the same people. Both now mean "not
+                            // knocked at yet", which is also what the export sheet's count
+                            // has said since skipped stopped counting as finished.
+                            if (onlyPending) booth.copy(voters = booth.voters.filter { !it.visited })
                             else booth,
                             vm.activeLists(),
+                        )
+                    }
+                },
+                // The booklet: the MLA's own form, laid out from the template's own
+                // measurements. The pending filter is applied to the blocks rather than to
+                // the voters, so a household keeps printing whole -- dropping the house
+                // because one of its four people is done would quietly shorten the day.
+                onExportPdf = { onlyPending ->
+                    handOver(
+                        "application/pdf",
+                        "booklet-${boothFileName()}.pdf",
+                    ) { out ->
+                        val booth = vm.activeBooth()
+                        PdfExporter.write(
+                            out,
+                            PrintOrder.blocks(Survey(booth, vm.activeLists())),
+                            PdfExporter.Options(
+                                mandal = booth.mandal,
+                                townWard = booth.townWard,
+                                boothNo = booth.boothNo,
+                                onlyPending = onlyPending,
+                            ),
                         )
                     }
                 },

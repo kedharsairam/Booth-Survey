@@ -16,6 +16,8 @@ import com.kraft.voterlist.data.matchesLoose
 import com.kraft.voterlist.io.BoothImporter
 import com.kraft.voterlist.io.XlsxReader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +34,31 @@ sealed interface ImportStep {
 }
 
 /**
+ * One step back.
+ *
+ * Holds the booth exactly as it was before the last change that could be regretted, plus a
+ * word for the button. This app had no undo anywhere, which made every mistake cost four
+ * arrow taps to repair -- and a misplaced family in the walking order is the artefact the
+ * whole survey exists to produce, so that is not a recoverable mistake at a doorstep.
+ *
+ * It is a whole-booth snapshot rather than a diff because the changes are all whole-object
+ * rewrites anyway ([Booth] is immutable), and one reference costs nothing until the next
+ * change replaces it.
+ */
+data class Undo(
+    val what: String,
+    val before: Booth,
+    /**
+     * True when the action also said something, so the toast can carry the button.
+     *
+     * False for the reorder steps: those fire once per arrow tap and once per step of a
+     * drag, and a toast that reappears on every one of them is noise. They get a quieter
+     * Undo on the family screen instead, where the thing being reordered is on display.
+     */
+    val inToast: Boolean = true,
+)
+
+/**
  * What the screens read.
  *
  * The active booth is part of this, and deliberately visible everywhere rather than only on
@@ -44,7 +71,34 @@ data class UiState(
     val booth: Booth = Booth(boothNo = ""),
     val lists: Lists = Lists(),
     val query: String = "",
+    /**
+     * Family search text. Separate from the voter query so switching tabs never
+     * carries a filter into the other list.
+     */
+    val familyQuery: String = "",
     val filter: Filter = Filter.ALL,
+    /**
+     * Caste, party and address match exactly (case-insensitive); blank means no limit. All
+     * of these combine with the status filter and the search, so "left + BC-A" is a real
+     * question the list can answer.
+     */
+    val casteFilter: String = "",
+    val partyFilter: String = "",
+    val addressFilter: String = "",
+    val notInFileOnly: Boolean = false,
+    /**
+     * Ids ticked in selection mode. They survive filter changes -- someone who tapped four
+     * rows, searched, and tapped two more has six selected, not two -- and are pruned to
+     * voters who still exist whenever a bulk action runs. Cleared on booth switch (ids from
+     * another booth must never leak into this one's actions) and after every bulk action.
+     */
+    val selectedIds: Set<String> = emptySet(),
+    /**
+     * Ids ticked in family selection mode. Same contract as selectedIds: survives
+     * filter changes, pruned to families that still exist whenever a bulk action
+     * runs, cleared on booth switch and after every bulk action.
+     */
+    val selectedFamilyIds: Set<String> = emptySet(),
     val openVoterId: String? = null,
     val openFamilyId: String? = null,
     /**
@@ -69,8 +123,31 @@ data class UiState(
     val pickingMember: Boolean = false,
     val importStep: ImportStep = ImportStep.Idle,
     val message: String? = null,
+    /**
+     * Set by anything worth taking back, cleared by the next change. `null` means the toast
+     * has no Undo on it, which is how the toast knows whether to show the button.
+     */
+    val undo: Undo? = null,
 ) {
     enum class Filter { ALL, REMAINING, DONE }
+
+    /** True when anything beyond the status narrows the list. */
+    val hasExtraFilters: Boolean get() =
+        casteFilter.isNotEmpty() || partyFilter.isNotEmpty() || addressFilter.isNotEmpty() || notInFileOnly
+
+    /** How many filter dimensions are on, for the badge on the filter button. */
+    val filterCount: Int get() =
+        (if (filter != Filter.ALL) 1 else 0) +
+            (if (casteFilter.isNotEmpty()) 1 else 0) +
+            (if (partyFilter.isNotEmpty()) 1 else 0) +
+            (if (addressFilter.isNotEmpty()) 1 else 0) +
+            (if (notInFileOnly) 1 else 0)
+
+    /** How many of the list's voters are ticked, for the selection bar. */
+    val selectedCount: Int get() = selectedIds.size
+
+    /** How many families are ticked, for the selection bar. */
+    val selectedFamilyCount: Int get() = selectedFamilyIds.size
 
     // A booth is identified by its booth number. Testing the id instead would be true
     // for the empty placeholder, which is created with a fresh id, and the "nothing
@@ -80,13 +157,39 @@ data class UiState(
     val families: List<Family> get() = booth.families
 
     val totalCount: Int get() = voters.size
-    val doneCount: Int get() = voters.count { it.isDone }
+
+    /**
+     * People actually knocked at, which is what "visited" means to him.
+     *
+     * This counted [Voter.isDone] -- visited *or* skipped -- and that made the headline lie.
+     * Forty skipped houses still need coming back to, which the app says twice itself, but
+     * counting them as finished turned the Home screen into "All visited" with a full progress
+     * bar while a third of the ward was unvisited. A surveyor packs up on that screen.
+     */
+    val doneCount: Int get() = voters.count { it.visited }
+
+    /** Skipped, which is not the same as finished. Shown beside the headline. */
+    val skippedCount: Int get() = voters.count { it.skipped }
+
     val remainingCount: Int get() = totalCount - doneCount
     val familyCount: Int get() = families.size
     val unassignedCount: Int get() = voters.count { it.familyId == null }
     val notInFileCount: Int get() = voters.count { it.notInLatestFile }
 
     val familiesWithMembers: List<FamilyWithMembers> get() = booth.familiesWithMembers
+
+    /**
+     * Families matching the family search, in walking order. Matches the label
+     * or any member's name, so finding a house works from either end.
+     */
+    val visibleFamilies: List<FamilyWithMembers>
+        get() {
+            val q = familyQuery.trim()
+            if (q.isEmpty()) return familiesWithMembers
+            return familiesWithMembers.filter { fwm ->
+                fwm.label.matchesLoose(q) || fwm.members.any { it.name.matchesLoose(q) }
+            }
+        }
 
     /** Members of a family in the order the surveyor arranged them. */
     fun membersOf(familyId: String): List<Voter> =
@@ -105,9 +208,8 @@ data class UiState(
     /**
      * The voter list in serial order.
      *
-     * Serial, not door number, on purpose. The booklet is sorted by door number so a street is
-     * walked in one direction, but the app is the thing that has to be trusted when the paper
-     * is wrong -- and the door number is the field the extraction got wrong most often. Serial
+     * Serial, not door number, on purpose. The app is the thing that has to be trusted when the
+     * sheet is wrong -- and the door number is the field the extraction got wrong most often. Serial
      * is the one value that came off the roll perfectly, so it is what the app orders by.
      */
     val visible: List<Voter>
@@ -121,6 +223,10 @@ data class UiState(
                         Filter.DONE -> v.isDone
                     }
                 }
+                .filter { v -> casteFilter.isEmpty() || v.caste.equals(casteFilter, ignoreCase = true) }
+                .filter { v -> partyFilter.isEmpty() || v.party.equals(partyFilter, ignoreCase = true) }
+                .filter { v -> addressFilter.isEmpty() || v.address.equals(addressFilter, ignoreCase = true) }
+                .filter { v -> !notInFileOnly || v.notInLatestFile }
                 .filter { v -> q.isEmpty() || matches(v, q) }
                 .sortedBy { it.serial }
                 .toList()
@@ -135,11 +241,30 @@ data class UiState(
             v.address.matchesLoose(q) ||
             v.caste.matchesLoose(q) ||
             v.party.matchesLoose(q)
+
+    /**
+     * Text search across the whole booth, ignoring the list's filters. Home's search promises
+     * "anyone", and a family filter left on from the Voters tab must not silently break that
+     * promise.
+     */
+    val searchHits: List<Voter>
+        get() {
+            val q = query.trim()
+            if (q.isEmpty()) return emptyList()
+            return voters.asSequence().filter { matches(it, q) }.sortedBy { it.serial }.toList()
+        }
 }
 
-class SurveyViewModel(app: Application) : AndroidViewModel(app) {
+class SurveyViewModel(
+    app: Application,
+    /**
+     * Where the store lives. Null is the app's own storage; a test passes a temporary
+     * directory so it cannot read or write a surveyor's real booths.
+     */
+    storeRoot: java.io.File? = null,
+) : AndroidViewModel(app) {
 
-    private val store = Store(app)
+    private val store = Store(app, storeRoot)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -174,7 +299,20 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
             val lists = store.loadLists()
             loadRemembered()
             val booth = index.activeId?.let { store.loadBooth(it) } ?: Booth(boothNo = "")
-            _state.value = _state.value.copy(index = index, lists = lists, booth = booth, loading = false)
+            // If a booth file would not parse, say so at once and name the booth. Otherwise
+            // the app shows "No voters list yet" and the next import overwrites what is left.
+            val lost = store.unreadableBooth
+            _state.value = _state.value.copy(
+                index = index,
+                lists = lists,
+                booth = booth,
+                loading = false,
+                message = lost?.let {
+                    "The saved list could not be read and was set aside as " +
+                        "${it.second}. Nothing was deleted. Do not import over it until " +
+                        "you have checked the file."
+                },
+            )
         }
     }
 
@@ -199,12 +337,52 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
         return index.copy(activeId = booth.id, booths = others + entry)
     }
 
-    private suspend fun saveBooth(booth: Booth) {
+    /**
+     * Writes the booth, and remembers what it replaced if [undoWhat] says this was a change
+     * worth taking back.
+     *
+     * The snapshot is taken from the state, which still holds the old booth at this point --
+     * every caller reads it into a local first and only then builds the new one. Anything
+     * saved without [undoWhat] clears the undo, so a stale one can never be offered against
+     * an action it does not describe.
+     */
+    private suspend fun saveBooth(booth: Booth, undoWhat: String? = null, undoInToast: Boolean = true) {
         store.saveBooth(booth)
         val index = indexFor(booth, _state.value.index)
         store.saveIndex(index)
-        _state.value = _state.value.copy(index = index, booth = booth)
+        val before = _state.value.booth
+        _state.value = _state.value.copy(
+            index = index,
+            booth = booth,
+            undo = undoWhat?.let { Undo(it, before, undoInToast) },
+        )
     }
+
+    /**
+     * Puts the last regrettable change back, once.
+     *
+     * Restores the whole booth and clears the undo in the same step, so it cannot be pressed
+     * twice for one action. If the booth has been re-imported or switched since the change
+     * was made there is nothing sensible to go back to, so it refuses rather than resurrect
+     * an old roll over a newer one.
+     */
+    fun undoLast() {
+        val u = _state.value.undo ?: return
+        if (u.before.id != _state.value.booth.id) {
+            say("That is no longer the booth on screen, so it cannot be put back.")
+            return
+        }
+        viewModelScope.launch {
+            saveBooth(u.before)
+            _state.value = _state.value.copy(
+                undo = null,
+                message = "Put back: ${u.what}.",
+            )
+        }
+    }
+
+    /** True when there is something to take back and the family screen should offer it. */
+    val canUndoQuietly: Boolean get() = _state.value.undo?.inToast == false
 
     // --- booths -------------------------------------------------------------
 
@@ -214,7 +392,14 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
             val booth = store.loadBooth(id)
             val index = _state.value.index.copy(activeId = id)
             store.saveIndex(index)
-            _state.value = _state.value.copy(index = index, booth = booth, query = "")
+            // Ids and family filters belong to the booth they were picked in. Carrying
+            // either across would tick strangers or filter this booth by that one's
+            // families, both silently.
+            _state.value = _state.value.copy(
+                index = index, booth = booth, query = "",
+                casteFilter = "", partyFilter = "", addressFilter = "", notInFileOnly = false,
+                selectedIds = emptySet(), familyQuery = "", selectedFamilyIds = emptySet(),
+            )
         }
     }
 
@@ -224,27 +409,13 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { saveBooth(booth.copy(label = label.trim())) }
     }
 
-    /** Forgets a booth and everything in it. Only offered when it is empty. */
-    fun forgetBooth() {
-        val booth = _state.value.booth
-        if (booth.size > 0) {
-            say("This booth still has ${booth.size} people in it. Empty it first.")
-            return
-        }
-        viewModelScope.launch {
-            store.deleteBooth(booth.id)
-            val index = _state.value.index.copy(
-                activeId = null,
-                booths = _state.value.index.booths.filterNot { it.id == booth.id },
-            )
-            store.saveIndex(index)
-            _state.value = _state.value.copy(
-                index = index,
-                booth = Booth(boothNo = ""),
-                message = "${booth.label} removed.",
-            )
-        }
-    }
+    // --- dead ---------------------------------------------------------------
+    //
+    // Wiping a booth was reachable at some point and then the button went away. The code
+    // stayed, and it is the most dangerous function in the app: it deletes a booth's file
+    // outright, with no confirmation and no backup, and its only guard is a toast. Nothing
+    // calls it, and keeping it means the next person to wire up a Settings button can make
+    // that mistake by accident. It is removed rather than kept warm.
 
     // --- import -------------------------------------------------------------
 
@@ -275,11 +446,12 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
                 r == null -> fail("That file could not be opened. If it is in Drive or another " +
                     "app, download it to the phone first and try again.")
                 !r.usable && r.missingColumns.isNotEmpty() -> fail(
-                    "The sheet is missing: ${r.missingColumns.joinToString(", ")}.\n\n" +
-                        "It needs four columns -- serial, voter id, name, house number -- in any " +
-                        "order. Export the blank template from Settings to get them."
+                    "The file is missing: ${r.missingColumns.joinToString(", ")}.\n\n" +
+                        "It needs four labels at the top -- serial, voter id, name, house " +
+                        "number -- in any order. Add them in Excel or Google Sheets, save " +
+                        "the file, then choose it here."
                 )
-                !r.usable -> fail("No rows were found in that sheet.")
+                !r.usable -> fail("That file has nobody in it.")
                 else -> _state.value = _state.value.copy(
                     importStep = ImportStep.NeedsDetails(r.rows, summarise(r), null),
                 )
@@ -292,11 +464,11 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun summarise(r: XlsxReader.Result): String = buildString {
-        append("${r.rows.size} rows read.")
+        append("The file has ${r.rows.size} people in it.")
         if (r.blankName > 0) append(" ${r.blankName} with no name.")
         if (r.blankHouse > 0) append(" ${r.blankHouse} with no door number.")
         if (r.unreadableSerial > 0) {
-            append(" ${r.unreadableSerial} with a serial that is not a number.")
+            append(" ${r.unreadableSerial} with a serial number that is not a number.")
         }
         if (r.rows.any { !it.hasSerial }) append(" Some serials were blank.")
     }
@@ -341,14 +513,23 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
                 booth = if (activate) outcome.booth else _state.value.booth,
                 importStep = ImportStep.Done(describe(outcome, existing != null)),
             )
-            // Drop the "needs details" payload so a back swipe cannot re-enter a stale sheet.
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(2600)
-                if (_state.value.importStep is ImportStep.Done) {
-                    _state.value = _state.value.copy(importStep = ImportStep.Idle, message = null)
-                }
-            }
         }
+    }
+
+    /**
+     * Dismisses the import result and lands where the work continues.
+     *
+     * The result stays on screen until it is acknowledged: the earlier version cleared it on
+     * a timer, which dropped the user back onto the file prompt with no booth open and no
+     * visible outcome -- the "it is still asking for the file" dead end. The counts move to
+     * the toast, which clears itself, so nothing here needs a timer.
+     */
+    fun finishImport() {
+        val step = _state.value.importStep
+        _state.value = _state.value.copy(
+            importStep = ImportStep.Idle,
+            message = (step as? ImportStep.Done)?.message,
+        )
     }
 
     private fun describe(o: BoothImporter.Outcome, wasUpdate: Boolean): String = buildString {
@@ -368,7 +549,193 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     // --- navigation ---------------------------------------------------------
 
     fun setQuery(q: String) { _state.value = _state.value.copy(query = q) }
+    fun setFamilyQuery(q: String) { _state.value = _state.value.copy(familyQuery = q) }
     fun setFilter(f: UiState.Filter) { _state.value = _state.value.copy(filter = f) }
+    fun setCasteFilter(v: String) { _state.value = _state.value.copy(casteFilter = v) }
+    fun setPartyFilter(v: String) { _state.value = _state.value.copy(partyFilter = v) }
+    fun setAddressFilter(v: String) { _state.value = _state.value.copy(addressFilter = v) }
+    fun toggleNotInFileOnly() {
+        _state.value = _state.value.copy(notInFileOnly = !_state.value.notInFileOnly)
+    }
+
+    /** Clears the search and every filter, but leaves the ticked rows ticked. */
+    fun clearListFilters() {
+        _state.value = _state.value.copy(
+            query = "", filter = UiState.Filter.ALL,
+            casteFilter = "", partyFilter = "", addressFilter = "", notInFileOnly = false,
+        )
+    }
+
+    // --- selection ----------------------------------------------------------
+
+    fun toggleSelect(id: String) {
+        val sel = _state.value.selectedIds
+        _state.value = _state.value.copy(
+            selectedIds = if (id in sel) sel - id else sel + id,
+        )
+    }
+
+    /** Ticks everything the list currently shows. Starts from, not replaces, the set. */
+    fun selectAllVisible() {
+        val s = _state.value
+        _state.value = s.copy(selectedIds = s.selectedIds + s.visible.map { it.id })
+    }
+
+    fun clearSelection() {
+        if (_state.value.selectedIds.isNotEmpty()) {
+            _state.value = _state.value.copy(selectedIds = emptySet())
+        }
+    }
+
+    fun toggleFamilySelect(id: String) {
+        val sel = _state.value.selectedFamilyIds
+        _state.value = _state.value.copy(
+            selectedFamilyIds = if (id in sel) sel - id else sel + id,
+        )
+    }
+
+    fun clearFamilySelection() {
+        if (_state.value.selectedFamilyIds.isNotEmpty()) {
+            _state.value = _state.value.copy(selectedFamilyIds = emptySet())
+        }
+    }
+
+    /** Ticks every family the list currently shows. Starts from, not replaces, the set. */
+    fun selectAllFamiliesVisible() {
+        val s = _state.value
+        _state.value = s.copy(selectedFamilyIds = s.selectedFamilyIds + s.visibleFamilies.map { it.family.id })
+    }
+
+    /** The ticked families that still exist. */
+    private fun liveFamilySelection(): Set<String> {
+        val ids = _state.value.booth.families.map { it.id }.toSet()
+        return _state.value.selectedFamilyIds.intersect(ids)
+    }
+
+    private fun familyWord(n: Int) = if (n == 1) "family" else "families"
+
+    /** The ticked rows that still exist. Ids of deleted voters never act again. */
+    private fun liveSelection(): Set<String> {
+        val ids = _state.value.booth.voters.map { it.id }.toSet()
+        return _state.value.selectedIds.intersect(ids)
+    }
+
+    private fun personWord(n: Int) = if (n == 1) "person" else "people"
+
+    fun deleteSelected() {
+        val ids = liveSelection()
+        if (ids.isEmpty()) {
+            say("Nobody is ticked.")
+            return
+        }
+        val booth = _state.value.booth
+        viewModelScope.launch {
+            saveBooth(booth.withoutVoters(ids).pruned(), undoWhat = "putting back the ${ids.size} you removed")
+            if (_state.value.openVoterId in ids) closeVoter()
+            _state.value = _state.value.copy(
+                selectedIds = emptySet(),
+                message = "${ids.size} ${personWord(ids.size)} removed.",
+            )
+        }
+    }
+
+    fun markSelectedVisited() = markSelected(visited = true, skipped = false, what = "visited")
+
+    fun markSelectedPending() = markSelected(visited = false, skipped = false, what = "still to visit")
+
+    fun markSelectedSkipped() = markSelected(visited = false, skipped = true, what = "skipped")
+
+    private fun markSelected(visited: Boolean, skipped: Boolean, what: String) {
+        val ids = liveSelection()
+        if (ids.isEmpty()) {
+            say("Nobody is ticked.")
+            return
+        }
+        val booth = _state.value.booth
+        viewModelScope.launch {
+            saveBooth(booth.withVisitState(ids, visited, skipped), undoWhat = "the marks on ${ids.size} you changed")
+            _state.value = _state.value.copy(
+                selectedIds = emptySet(),
+                message = "${ids.size} ${personWord(ids.size)} marked $what.",
+            )
+        }
+    }
+
+    /**
+     * Moves the ticked rows into [familyId]. Movers go to the end of the family, like a
+     * single add does, and anyone already in another family is moved rather than refused.
+     */
+    fun assignSelectedToFamily(familyId: String) {
+        val ids = liveSelection()
+        if (ids.isEmpty()) {
+            say("Nobody is ticked.")
+            return
+        }
+        val booth = _state.value.booth
+        val label = booth.familiesWithMembers.firstOrNull { it.family.id == familyId }?.label
+            ?: "the family"
+        viewModelScope.launch {
+            saveBooth(booth.withFamily(ids, familyId).pruned(), undoWhat = "putting ${ids.size} back where they were")
+            _state.value = _state.value.copy(
+                selectedIds = emptySet(),
+                message = "${ids.size} ${personWord(ids.size)} moved to $label.",
+            )
+        }
+    }
+
+    /** Makes a new family out of the ticked rows, last in the walking order. */
+    fun moveSelectedToNewFamily() {
+        val ids = liveSelection()
+        if (ids.isEmpty()) {
+            say("Nobody is ticked.")
+            return
+        }
+        val booth = _state.value.booth
+        val id = Voter.newId()
+        val order = (booth.families.maxOfOrNull { it.order } ?: -1) + 1
+        // Serial order, so the new family reads the way the roll reads.
+        val moving = booth.voters.filter { it.id in ids }.sortedBy { it.serial }
+        val position = moving.map { it.id }.withIndex().associate { (i, mid) -> mid to i }
+        val voters = booth.voters.map {
+            if (it.id in ids) it.copy(familyId = id, familyOrder = position[it.id] ?: 0) else it
+        }
+        viewModelScope.launch {
+            saveBooth(booth.copy(voters = voters, families = booth.families + Family(id, order)).pruned(),
+                undoWhat = "removing the new family")
+            _state.value = _state.value.copy(
+                selectedIds = emptySet(),
+                message = "New family made with ${ids.size} ${personWord(ids.size)}.",
+            )
+        }
+    }
+
+    fun deleteFamilies() {
+        val ids = liveFamilySelection()
+        if (ids.isEmpty()) {
+            say("No families are ticked.")
+            return
+        }
+        val booth = _state.value.booth
+        val n = ids.size
+        // Same promise as deleting one: the grouping goes, the people stay.
+        val voters = booth.voters.map {
+            if (it.familyId in ids) it.copy(familyId = null, familyOrder = 0) else it
+        }
+        viewModelScope.launch {
+            saveBooth(
+                booth.copy(
+                    voters = voters,
+                    families = booth.families.filterNot { it.id in ids },
+                ),
+                undoWhat = "putting back the $n you deleted",
+            )
+            if (_state.value.openFamilyId in ids) closeFamily()
+            _state.value = _state.value.copy(
+                selectedFamilyIds = emptySet(),
+                message = "$n ${familyWord(n)} deleted. Their people stay on the list.",
+            )
+        }
+    }
 
     fun openVoter(id: String) {
         _state.value = _state.value.copy(openVoterId = id, creatingVoter = false, draft = null)
@@ -426,13 +793,46 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun replaceVoter(id: String, f: (Voter) -> Voter) {
-        val booth = _state.value.booth
-        val i = booth.voters.indexOfFirst { it.id == id }
+        val s = _state.value
+        val i = s.booth.voters.indexOfFirst { it.id == id }
         if (i < 0) return
-        val voters = booth.voters.toMutableList()
+        val voters = s.booth.voters.toMutableList()
         voters[i] = f(voters[i])
-        viewModelScope.launch { saveBooth(booth.copy(voters = voters)) }
+        // Published before it is written, not after.
+        //
+        // This used to write the booth to disk first and publish from inside that write. A
+        // keystroke therefore did not change `value` until the file had been written, and a
+        // controlled text field whose `value` does not match what is being typed reverts the
+        // keystroke. On the voter form that meant exactly one character per focus: the first
+        // landed once the write finished, and every one after it was thrown away, so "TDP"
+        // came out as "T". A new voter never saw it -- the draft path publishes in place.
+        _state.value = s.copy(booth = s.booth.copy(voters = voters))
+        persistSoon()
     }
+
+    /**
+     * The write behind an edit, held back until typing pauses.
+     *
+     * Publishing is immediate (above) so the field keeps every character; the disk write is
+     * what waits, so a name typed at speed is one write rather than one per letter. Cancelling
+     * the previous one before its delay has elapsed means a superseded write is abandoned
+     * before it starts, never halfway through a file.
+     */
+    private fun persistSoon() {
+        pendingSave?.cancel()
+        pendingSave = viewModelScope.launch {
+            delay(saveSettleMs)
+            val s = _state.value
+            store.saveBooth(s.booth)
+            val index = indexFor(s.booth, s.index)
+            store.saveIndex(index)
+            // Read the current state rather than the one captured above: anything typed
+            // while this was writing belongs in front of the index.
+            _state.value = _state.value.copy(index = index)
+        }
+    }
+
+    private var pendingSave: Job? = null
 
     fun setField(field: String, value: String) {
         // A value typed into a list-backed field is remembered when the editor closes, not on
@@ -440,11 +840,34 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
         if (!_state.value.creatingVoter) kindOf(field)?.let { pendingLearn[it] = value.trim() }
         editEditing { v ->
             when (field) {
-                "serial" -> v.copy(serial = value.trim().toIntOrNull() ?: v.serial)
+                // Silently refusing to take a letter, with no word, was the old behaviour:
+                // type "12a" and it shows "12", as though the a had never been pressed, and
+                // there is no way to tell a rejected keystroke from a dropped one.
+                "serial" -> {
+                    val trimmed = value.trim()
+                    val n = trimmed.toIntOrNull()
+                    if (n == null && trimmed.isNotEmpty() && trimmed.any { it.isDigit() }) {
+                        say("A serial is a whole number, like 312.")
+                    }
+                    v.copy(serial = n ?: v.serial)
+                }
                 "voterId" -> v.copy(voterId = value)
                 "name" -> v.copy(name = value)
                 "house" -> v.copy(house = value)
-                "phone" -> v.copy(phone = value.filter { it.isDigit() }.take(10))
+                "phone" -> {
+                    // Ditto: a leading +, an 0, or an eleventh digit used to vanish without
+                    // a word. Now it says so once, rather than storing half a number.
+                    val kept = value.filter { it.isDigit() }
+                    if (kept != value) {
+                        say(
+                            when {
+                                kept.length >= 10 -> "A phone number here stops at 10 digits."
+                                else -> "A phone number here is digits only."
+                            }
+                        )
+                    }
+                    v.copy(phone = kept.take(10))
+                }
                 "address" -> v.copy(address = value)
                 "caste" -> v.copy(caste = value)
                 "subCaste" -> v.copy(subCaste = value)
@@ -457,12 +880,23 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     private fun kindOf(field: String): Lists.Kind? = when (field) {
         "address" -> Lists.Kind.ADDRESS
         "caste" -> Lists.Kind.CASTE
+        // Missing here means a sub caste typed into the form never reaches the shared list,
+        // so it is offered to nobody but this one person. The list exists; this was the gap.
+        "subCaste" -> Lists.Kind.SUBCASTE
         "party" -> Lists.Kind.PARTY
         else -> null
     }
 
     fun toggleVisited() = editEditing { it.copy(visited = !it.visited, skipped = false) }
     fun toggleSkipped() = editEditing { it.copy(skipped = !it.skipped, visited = false) }
+
+    /**
+     * Neither visited nor skipped: back on the list.
+     *
+     * The third answer to a three-way question, which the two toggles cannot express --
+     * clearing a skip needs a way that is not "mark visited".
+     */
+    fun setPending() = editEditing { it.copy(visited = false, skipped = false) }
 
     /** Clears the "not in the latest file" mark once you have decided they should stay. */
     fun keepAnyway(id: String) = replaceVoter(id) { it.copy(notInLatestFile = false) }
@@ -510,7 +944,7 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
         // The person goes; the family they were in stays standing. Losing one member is not a
         // reason to lose the rest of the household.
         viewModelScope.launch {
-            saveBooth(booth.copy(voters = booth.voters.filterNot { it.id == id }))
+            saveBooth(booth.withoutVoters(setOf(id)).pruned(), undoWhat = "putting back ${v.name}")
             if (_state.value.openVoterId == id) closeVoter()
             publish("${v.name.ifBlank { "Voter" }} removed.")
         }
@@ -521,8 +955,10 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     fun createFamily() {
         val id = Voter.newId()
         val booth = _state.value.booth
+        // After everyone else: a family created later is visited later, until arranged.
+        val order = (booth.families.maxOfOrNull { it.order } ?: -1) + 1
         viewModelScope.launch {
-            saveBooth(booth.copy(families = booth.families + Family(id)))
+            saveBooth(booth.copy(families = booth.families + Family(id, order)), undoWhat = "removing the new family")
             openFamily(id)
         }
     }
@@ -589,7 +1025,7 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
                 else -> it.copy(familyId = familyId, familyOrder = order)
             }
         }
-        viewModelScope.launch { saveBooth(booth.copy(voters = voters)) }
+        viewModelScope.launch { saveBooth(booth.copy(voters = voters).pruned()) }
     }
 
     fun removeMember(familyId: String, voterId: String) {
@@ -602,12 +1038,22 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
         // correctly today and produce absurd orderings the first time somebody moved a member.
         val order = remaining.map { it.id }.withIndex().associate { (i, id) -> id to i }
         val voters = booth.voters.map {
-            if (it.familyId != familyId) it else it.copy(familyOrder = order[it.id] ?: it.familyOrder)
+            when {
+                // The one leaving goes back to being unassigned, like a deleted family's
+                // members do. Without this line the confirm dialog agrees and nothing
+                // happens: they keep the family id and stay put.
+                it.id == voterId -> it.copy(familyId = null, familyOrder = 0)
+                it.familyId != familyId -> it
+                else -> it.copy(familyOrder = order[it.id] ?: it.familyOrder)
+            }
         }
-        viewModelScope.launch { saveBooth(booth.copy(voters = voters)) }
+        val who = booth.voters.firstOrNull { it.id == voterId }?.name.orEmpty()
+        viewModelScope.launch {
+            saveBooth(booth.copy(voters = voters).pruned(), undoWhat = "putting $who back")
+        }
     }
 
-    /** Moves a member one place up or down. Arrows rather than dragging: this is used one-handed. */
+    /** Moves a member one place up or down, from the arrows or one step of a drag. */
     fun moveMember(familyId: String, voterId: String, by: Int) {
         val booth = _state.value.booth
         val members = booth.voters.filter { it.familyId == familyId }.sortedBy { it.familyOrder }
@@ -620,7 +1066,32 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
         val voters = booth.voters.map {
             if (it.familyId != familyId) it else it.copy(familyOrder = order[it.id] ?: it.familyOrder)
         }
-        viewModelScope.launch { saveBooth(booth.copy(voters = voters)) }
+        // Quiet: an arrow tap is not an announcement, but a drag that ends up wrong still
+        // has to be repairable without four more taps.
+        viewModelScope.launch { saveBooth(booth.copy(voters = voters), undoWhat = "the move", undoInToast = false) }
+    }
+
+    /**
+     * Moves a family one place up or down in the walking order, from the arrows or one
+     * step of a drag. Reassigns the clean run like members do, so the order is always
+     * 0..n-1.
+     */
+    fun moveFamily(familyId: String, by: Int) {
+        val booth = _state.value.booth
+        val ordered = booth.families.sortedBy { it.order }
+        val from = ordered.indexOfFirst { it.id == familyId }
+        val to = from + by
+        if (from < 0 || to < 0 || to >= ordered.size) return
+        val reordered = ordered.toMutableList()
+        reordered.add(to, reordered.removeAt(from))
+        val order = reordered.map { it.id }.withIndex().associate { (i, id) -> id to i }
+        val families = booth.families.map {
+            it.copy(order = order[it.id] ?: it.order)
+        }
+        // The printed walking order is the artefact this app exists to produce, so a drag
+        // that lands wrong must be repairable. No toast: a toast on every arrow tap, and on
+        // every step of a drag, is noise that hides the one that mattered.
+        viewModelScope.launch { saveBooth(booth.copy(families = families), undoWhat = "the move", undoInToast = false) }
     }
 
     // --- managed lists ------------------------------------------------------
@@ -639,6 +1110,9 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
         if (current.any { it.equals(v, ignoreCase = true) }) return
         viewModelScope.launch { commitLists(_state.value.lists.with(kind, current + v)) }
     }
+
+    /** How long editing pauses before the booth is written, in milliseconds. */
+    private val saveSettleMs = 250L
 
     private val pendingLearn = mutableMapOf<Lists.Kind, String>()
 
@@ -672,15 +1146,18 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     fun removeListValue(kind: Lists.Kind, value: String) {
         val lists = _state.value.lists
         val booth = _state.value.booth
-        val cleared = if (kind == Lists.Kind.CASTE) {
-            // Caste is also a per-voter value, so dropping it from the list has to clear it on
-            // anyone holding it. Leaving a recorded caste the list no longer offers prints
-            // something the dropdown can no longer produce.
-            booth.copy(voters = booth.voters.map {
+        // Caste and sub caste are also per-voter values, so dropping one from its list has
+        // to clear it on anyone holding it. Leaving a recorded value the list no longer
+        // offers prints something the dropdown can no longer produce. Party and address are
+        // left alone: the form keeps them, and the app says so in the confirmation.
+        val cleared = when (kind) {
+            Lists.Kind.CASTE -> booth.copy(voters = booth.voters.map {
                 if (it.caste.equals(value, true)) it.copy(caste = "") else it
             })
-        } else {
-            booth
+            Lists.Kind.SUBCASTE -> booth.copy(voters = booth.voters.map {
+                if (it.subCaste.equals(value, true)) it.copy(subCaste = "") else it
+            })
+            else -> booth
         }
         viewModelScope.launch {
             saveBooth(cleared)
@@ -691,6 +1168,7 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     fun countWith(kind: Lists.Kind, value: String): Int = _state.value.voters.count {
         when (kind) {
             Lists.Kind.CASTE -> it.caste.equals(value, true)
+            Lists.Kind.SUBCASTE -> it.subCaste.equals(value, true)
             Lists.Kind.ADDRESS -> it.address.equals(value, true)
             Lists.Kind.PARTY -> it.party.equals(value, true)
         }
@@ -716,6 +1194,7 @@ class SurveyViewModel(app: Application) : AndroidViewModel(app) {
     /** The shared vocabulary, for exports that run after the composition has gone. */
     fun activeLists(): Lists = _state.value.lists
 
-    fun say(m: String) { _state.value = _state.value.copy(message = m) }
+    /** A message with no action behind it, so there is nothing to take back. */
+    fun say(m: String) { _state.value = _state.value.copy(message = m, undo = null) }
     fun clearMessage() { _state.value = _state.value.copy(message = null) }
 }

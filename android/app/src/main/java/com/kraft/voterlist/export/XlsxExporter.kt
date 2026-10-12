@@ -7,6 +7,7 @@ import com.kraft.voterlist.data.Voter
 import java.io.OutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import com.kraft.voterlist.data.PrintOrder
 
 /**
  * Writes the survey as a real .xlsx.
@@ -25,8 +26,8 @@ import java.util.zip.ZipOutputStream
  * is entitled to reinterpret, and both are join keys once this sheet is merged with anything
  * else.
  *
- * The family columns carry the arrangement the surveyor made, so the sheet and the printed
- * booklet can be checked against each other rather than trusted separately.
+ * The family columns carry the arrangement the surveyor made, so the sheet and the family
+ * screen can be checked against each other rather than trusted separately.
  */
 object XlsxExporter {
 
@@ -36,8 +37,8 @@ object XlsxExporter {
     private fun col(name: String, get: (Voter) -> String) = name to Cell(get)
 
     /**
-     * The columns, in the order they are printed on the booklet so the two can be read side
-     * by side.
+     * The columns, in the order the surveyor reads them, so the sheet and the family screen
+     * can be read side by side.
      *
      * Built per export rather than held as a constant because two columns need the family,
      * and the family is a property of the survey rather than of the voter.
@@ -81,7 +82,11 @@ object XlsxExporter {
         val order = booth.voters.filter { it.familyId != null }.associate { it.id to it.familyOrder + 1 }
 
         val cols = columns(families, order)
-        val rows = listOf(cols.map { it.first }) + booth.voters.map { v -> cols.map { it.second.get(v) } }
+        // Rows follow the print order: families in the arranged walking order with their
+        // members arranged, then everyone unassigned. A spreadsheet in roll order would
+        // send him back and forth across the street he just arranged out of it.
+        val rows = listOf(cols.map { it.first }) +
+            PrintOrder.blocks(survey).flatMap { b -> b.members.map { v -> cols.map { it.second.get(v) } } }
 
         ZipOutputStream(out).use { zip ->
             zip.put("[Content_Types].xml", contentTypes())

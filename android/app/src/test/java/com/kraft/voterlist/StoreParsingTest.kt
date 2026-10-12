@@ -10,8 +10,8 @@ import org.junit.Test
  *
  * Small and unglamorous, and it is here because of what it once cost. `JSONObject.optString`
  * returns the string "null" for a key whose value is JSON null, so every seeded voter came
- * back "in family null" -- a family that does not exist -- and because the booklet prints
- * families from the family list, all 1129 of them vanished from the export while the app
+ * back "in family null" -- a family that does not exist -- and because the export prints
+ * families from the family list, all 1129 of them vanished from the sheet while the app
  * still showed 1129 on screen. Nothing about it looked wrong except the output.
  */
 class StoreParsingTest {
@@ -21,7 +21,7 @@ class StoreParsingTest {
         // These tests run against the reference org.json, where optString of a JSON null
         // gives "". The phone runs against Android's, where the same call gives "null" --
         // which is how all 1129 seeded voters ended up in a family called "null" and
-        // vanished from the booklet. Two implementations, two answers, so nothing may be
+        // vanished from the export. Two implementations, two answers, so nothing may be
         // written that relies on either. isNull means the same thing in both.
         val o = JSONObject("""{"familyId": null, "other": "x"}""")
         assertNull(o.stringOrNull("familyId"))
@@ -52,7 +52,7 @@ class StoreParsingTest {
     @Test
     fun `nothing in the seed claims a family`() {
         // The bundled asset predates families entirely, so every one of them must come back
-        // unassigned. If this fails, the booklet is about to print nothing.
+        // unassigned. If this fails, the export is about to print nothing.
         val root = JSONObject(SEED_JSON)
         val arr = root.getJSONArray("voters")
         assertEquals(1129, arr.length())
