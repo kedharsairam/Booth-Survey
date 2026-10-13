@@ -56,6 +56,21 @@ object XlsxReader {
     private val NAME = listOf("name", "fullname", "nameofvoter", "nameofelector", "votername")
     private val HOUSE = listOf("housenumber", "house", "houseno", "doorno", "door", "doornumber")
 
+    /**
+     * How far down to look for the column names.
+     *
+     * Enough for a title, a blank line and a header, which is what a report from an
+     * electoral office looks like. Not so far that a stray "name" inside the data is
+     * mistaken for the header.
+     */
+    private const val HEADER_SEARCH_ROWS = 10
+
+    /** Column names, as a repeated header row would spell them. */
+    private val REPEATED_HEADER_WORDS = setOf(
+        "sno", "slno", "serial", "serialno", "epicno", "epic", "voterid",
+        "houseno", "house", "housenumber", "name", "votername", "fullname",
+    )
+
     private val REQUIRED = listOf(
         "serial" to SERIAL,
         "voter id" to VOTER_ID,
@@ -64,6 +79,26 @@ object XlsxReader {
     )
 
     fun normaliseHeader(s: String): String = s.lowercase().filter { it.isLetterOrDigit() }
+
+    /**
+     * How many of the four column names a row states, and where each one is.
+     *
+     * The first column claiming a name wins, so a sheet carrying two columns that both look
+     * like a serial -- which this one does: "S.No" down the left as a row counter, and
+     * "Sl No" further in as the number the voter is actually known by -- takes the one the
+     * roll means. "sno" is not a spelling of serial; "slno" is.
+     */
+    private fun columnsIn(row: Map<Int, String>): Map<String, Int> {
+        val found = LinkedHashMap<String, Int>()
+        for ((index, text) in row.toSortedMap()) {
+            val key = normaliseHeader(text)
+            if (key.isEmpty()) continue
+            for ((field, spellings) in REQUIRED) {
+                if (spellings.contains(key) && !found.containsKey(field)) found[field] = index
+            }
+        }
+        return found
+    }
 
     fun read(input: InputStream): Result {
         val parts = unzip(input)
@@ -80,14 +115,31 @@ object XlsxReader {
         // row to find the four names in.
         if (grid.isEmpty()) return Result(emptyList(), listOf("any people listed"), 0, 0, 0)
 
-        val header = grid.first()
-        val columnFor = HashMap<String, Int>()
-        header.forEach { (index, text) ->
-            val key = normaliseHeader(text)
-            if (key.isEmpty()) return@forEach
-            for ((field, spellings) in REQUIRED) {
-                if (spellings.contains(key) && !columnFor.containsKey(field)) columnFor[field] = index
+        // The header is not necessarily the first row.
+        //
+        // It was assumed to be, and the sheet the electoral office actually hands out
+        // breaks that: row 1 is the title "VOTER LIST PART-WISE REPORT - 57 - Palacole",
+        // and the column names are on row 2. Read the first row, find nothing that looks
+        // like a column name, and the whole import came back as "the file is missing:
+        // serial, voter id, name, house number" -- which is true and useless, because the
+        // file has all four.
+        //
+        // So the top rows are scanned for the one that names the most columns, and that is
+        // the header. A plain list of names with no preamble still wins on row 1, so this
+        // costs a sheet that already worked nothing.
+        var headerRowIndex = -1
+        var columnFor: Map<String, Int> = emptyMap()
+        var bestScore = 0
+        for (i in 0 until minOf(HEADER_SEARCH_ROWS, grid.size)) {
+            val found = columnsIn(grid[i])
+            if (found.size > bestScore) {
+                bestScore = found.size
+                headerRowIndex = i
+                columnFor = found
             }
+        }
+        if (headerRowIndex < 0) {
+            return Result(emptyList(), listOf("any people listed"), 0, 0, 0)
         }
         val missing = REQUIRED.map { it.first }.filterNot { columnFor.containsKey(it) }
         if (missing.isNotEmpty()) {
@@ -97,13 +149,22 @@ object XlsxReader {
             return Result(emptyList(), missing, 0, 0, 0)
         }
 
-        val rows = ArrayList<Row>(grid.size)
+        // Everything above the header is a title, not a person.
+        val data = grid.subList(headerRowIndex + 1, grid.size)
+        val rows = ArrayList<Row>(data.size)
         var blankName = 0
         var blankHouse = 0
         var unreadableSerial = 0
-        for (i in 1 until grid.size) {
+        for (i in headerRowIndex + 1 until grid.size) {
             val cells = grid[i]
             fun at(field: String): String = columnFor[field]?.let { cells[it] }?.trim().orEmpty()
+
+            // A sheet long enough to be printed repeats its column names partway down, and
+            // those rows are not people. It reads as a person called "Voter Name" living at
+            // "House No" with a voter id of "EPIC No", which is how a roll picks up a ghost.
+            if (columnFor.values.all { c ->
+                    normaliseHeader(cells[c].orEmpty()) in REPEATED_HEADER_WORDS
+                }) continue
 
             val rawSerial = at("serial")
             val serial = rawSerial.toIntOrNull() ?: 0
