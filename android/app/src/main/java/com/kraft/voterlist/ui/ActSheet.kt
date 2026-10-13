@@ -190,7 +190,7 @@ private fun ActionRow(
             // 48dp minimum: a row with no caption is only as tall as its text, which came to
             // 40dp -- under the platform minimum, and this is the panel where a day's work is
             // marked and removed.
-            .heightIn(min = 48.dp)
+            .heightIn(min = BoothMetrics.TouchTarget)
             .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
             .padding(horizontal = Space.lg, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,

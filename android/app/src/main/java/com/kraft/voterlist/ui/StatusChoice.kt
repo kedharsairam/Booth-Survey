@@ -1,5 +1,7 @@
 package com.kraft.voterlist.ui
 
+import com.kraft.ui.tokens.KraftSpacing
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -119,8 +121,8 @@ private fun Segment(
     }
     Box(
         modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .heightIn(min = BoothMetrics.TouchTarget)
+            .clip(RoundedCornerShape(KraftSpacing.Spacing8))
             .background(fill)
             .clickable(role = Role.RadioButton, onClick = onClick)
             // One stop for a screen reader, saying what this is and whether it is chosen.
@@ -138,7 +140,7 @@ private fun Segment(
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 4.dp),
+            modifier = Modifier.padding(horizontal = 4.dp), // @kraft-lint-ignore spacing.no-raw-dp — a caption inset, not spacing between elements
         )
     }
 }

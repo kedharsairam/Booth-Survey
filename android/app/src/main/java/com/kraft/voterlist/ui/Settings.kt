@@ -223,7 +223,7 @@ private fun AboutFact(icon: androidx.compose.ui.graphics.vector.ImageVector, cla
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .padding(top = Space.xs)
-                .size(20.dp),
+                .size(KraftSpacing.Spacing20),
         )
         Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f)) {

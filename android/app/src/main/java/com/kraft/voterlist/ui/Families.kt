@@ -510,7 +510,7 @@ private fun FamilyCard(
         ),
         // The accent outline is the cheapest lift signal there is: no shadow to wash out
         // in sunlight, and it costs one animated colour rather than a whole draw pass.
-        border = BorderStroke(1.dp, outline),
+        border = BorderStroke(1.dp, outline), // @kraft-lint-ignore spacing.no-raw-dp — a hairline outline; the thickness is the point, and 2dp reads as a border
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
@@ -1158,7 +1158,7 @@ private fun MemberRow(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(1.dp)
+                .height(1.dp) // @kraft-lint-ignore spacing.no-raw-dp — a hairline rule between rows
                 .background(outline.copy(alpha = if (dragging) 1f else 0f)),
         )
     }
@@ -1270,7 +1270,7 @@ fun MemberPicker(
                 .imePadding(),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp,
+            tonalElevation = KraftSpacing.Spacing6,
         ) {
             Column(Modifier.padding(horizontal = Space.lg)) {
                 Spacer(Modifier.height(Space.lg))

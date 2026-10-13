@@ -79,7 +79,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun serialColumnWidth(): Dp {
     val digits = MaterialTheme.typography.titleLarge.lineHeight.value * 0.62f * 4
-    return (digits * LocalDensity.current.fontScale).dp.coerceIn(48.dp, 110.dp)
+    return (digits * LocalDensity.current.fontScale).dp
+        // The upper bound is a ceiling on a measured text column, not a spacing step: at
+        // a very large font a four-digit serial needs more than the rhythm allows, and
+        // ellipsising it would show the wrong number.
+        .coerceIn(BoothMetrics.TouchTarget, 110.dp) // @kraft-lint-ignore spacing.no-raw-dp, spacing.rhythm — a measured text ceiling, not a spacing step
 }
 
 /**

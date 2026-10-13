@@ -67,7 +67,7 @@ fun ExportSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = BoothMetrics.TouchTarget)
                     .toggleable(
                         value = onlyPending,
                         role = androidx.compose.ui.semantics.Role.Checkbox,
