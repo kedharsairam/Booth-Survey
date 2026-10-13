@@ -107,6 +107,24 @@ data class Booth(
      */
     fun forPendingOnly(): Booth = copy(voters = voters.filter { !it.visited })
 
+    /**
+     * A cheap summary of what is in here, for noticing that the booth has changed.
+     *
+     * The automatic backup compares this rather than the whole booth, so it does not have
+     * to read a megabyte of JSON on every launch. It is deliberately shallow -- people,
+     * their serials and their marks -- so that a typo being fixed counts as a change, and
+     * a list being merely re-saved does not.
+     */
+    fun fingerprint(): String = buildString {
+        append(boothNo).append('|').append(mandal).append('|').append(families.size).append('|')
+        for (v in voters) {
+            append(v.id).append(',').append(v.serial).append(',')
+            if (v.visited) append('V')
+            if (v.skipped) append('S')
+            append(v.familyId ?: "-").append('.').append(v.familyOrder).append(';')
+        }
+    }
+
 
     /**
      * Moves the given voters into [familyId], appended after the members already there in

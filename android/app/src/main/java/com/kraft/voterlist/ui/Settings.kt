@@ -1,5 +1,13 @@
 package com.kraft.voterlist.ui
 
+import androidx.compose.ui.platform.LocalContext
+
+import com.kraft.voterlist.io.BackupFiles
+
+import androidx.compose.material.icons.filled.Unarchive
+
+import androidx.compose.material.icons.filled.Save
+
 import androidx.compose.material.icons.filled.PhoneAndroid
 
 import androidx.compose.material.icons.filled.Lock
@@ -83,7 +91,13 @@ import com.kraft.ui.tokens.KraftSpacing
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SurveyViewModel, s: UiState, onImport: () -> Unit) {
+fun SettingsScreen(
+    vm: SurveyViewModel,
+    s: UiState,
+    onImport: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+) {
     val scroll = rememberScrollState()
     val fields = rememberFieldScroller(scroll)
     // One list open at a time. The three vocabularies used to sit fully open one under
@@ -104,7 +118,7 @@ fun SettingsScreen(vm: SurveyViewModel, s: UiState, onImport: () -> Unit) {
             // One card about the roll, not a card per button. "Export blank template" had a
             // card of its own holding one outline button and 100dp of nothing, which gave a
             // rarely-used action the same visual weight as the one people open Settings for.
-            BoothCard(vm, s, onImport, fields)
+            BoothCard(vm, s, onImport, onBackup, onRestore, fields)
             Spacer(Modifier.height(Space.xl))
 
             Spacer(Modifier.height(Space.xl))
@@ -496,6 +510,8 @@ private fun BoothCard(
     vm: SurveyViewModel,
     s: UiState,
     onImport: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
     fields: FieldScroller,
 ) {
     OutlinedCard(
@@ -543,6 +559,42 @@ private fun BoothCard(
                 "A spreadsheet with four columns: serial, voter id, name, house number. " +
                     "Importing a booth that is already here updates it without touching " +
                     "anything you have entered.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // Backup, next to import, because those are the two things that change what
+            // is on the phone: one brings the roll in, the other keeps what has happened
+            // to it since.
+            Spacer(Modifier.height(Space.lg))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                OutlinedButton(
+                    onClick = onBackup,
+                    enabled = s.hasBooth,
+                    modifier = Modifier.weight(1f).heightIn(min = BoothMetrics.FieldHeight),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Icon(Icons.Default.Save, null)
+                    Spacer(Modifier.width(Space.sm))
+                    Text("Back up")
+                }
+                OutlinedButton(
+                    onClick = onRestore,
+                    modifier = Modifier.weight(1f).heightIn(min = BoothMetrics.FieldHeight),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Icon(Icons.Default.Unarchive, null)
+                    Spacer(Modifier.width(Space.sm))
+                    Text("Put back")
+                }
+            }
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                "Back up saves a copy of everything on this phone — the people, who you " +
+                    "have been to, and the families — as one file you choose where to put. " +
+                    "The app also saves one by itself now and then, into Downloads." +
+                    (BackupFiles.lastSaved(LocalContext.current)
+                        ?.let { " Last one: $it." } ?: ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

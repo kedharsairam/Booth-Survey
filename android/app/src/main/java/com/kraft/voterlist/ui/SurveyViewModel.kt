@@ -1,5 +1,7 @@
 package com.kraft.voterlist.ui
 
+import com.kraft.voterlist.io.BackupFiles
+
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -16,6 +18,7 @@ import com.kraft.voterlist.data.matchesLoose
 import com.kraft.voterlist.io.BoothImporter
 import com.kraft.voterlist.io.XlsxReader
 import kotlinx.coroutines.Dispatchers
+import org.json.JSONObject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +51,8 @@ sealed interface ImportStep {
 data class Undo(
     val what: String,
     val before: Booth,
+    /** When the action happened, so a stale one can be dropped rather than offered. */
+    val at: Long = System.currentTimeMillis(),
     /**
      * True when the action also said something, so the toast can carry the button.
      *
@@ -66,6 +71,21 @@ data class Undo(
      * So the guard lives here rather than inline, where a test can hold it still.
      */
     fun targetFor(current: Booth): Booth? = if (before.id == current.id) before else null
+
+    /**
+     * Whether this is still worth offering.
+     *
+     * Now that undo survives the app closing, it can survive overnight too -- and putting
+     * back yesterday's "12 marked visited" at the start of today would be a disaster
+     * rather than a rescue. A day's work cannot be undone by a button that is offering to
+     * undo one action. Past this it is dropped.
+     */
+    fun isFresh(now: Long): Boolean = now - at < MAX_AGE_MS
+
+    private companion object {
+        /** Twelve hours: long enough to cover being interrupted, short enough to be safe. */
+        const val MAX_AGE_MS = 12L * 60 * 60 * 1000
+    }
 }
 
 /**
@@ -81,6 +101,12 @@ data class UiState(
     val booth: Booth = Booth(boothNo = ""),
     val lists: Lists = Lists(),
     val query: String = "",
+    /**
+     * The tab he was last on. Home otherwise, but every launch used to drop him there
+     * whatever he was doing, which is the screen that answers the least and interrupts
+     * the most.
+     */
+    val tab: String = "HOME",
     /**
      * Family search text. Separate from the voter query so switching tabs never
      * carries a filter into the other list.
@@ -139,7 +165,14 @@ data class UiState(
      */
     val undo: Undo? = null,
 ) {
-    enum class Filter { ALL, REMAINING, DONE }
+    enum class Filter {
+        ALL, REMAINING, DONE;
+
+        companion object {
+            /** By name, for a session file written by an earlier or later build. */
+            val byName: Map<String, Filter> = entries.associateBy { it.name }
+        }
+    }
 
     /** True when anything beyond the status narrows the list. */
     val hasExtraFilters: Boolean get() =
@@ -311,12 +344,24 @@ class SurveyViewModel(
             val booth = index.activeId?.let { store.loadBooth(it) } ?: Booth(boothNo = "")
             // If a booth file would not parse, say so at once and name the booth. Otherwise
             // the app shows "No voters list yet" and the next import overwrites what is left.
+            // Pick the session back up before the first frame, so he lands where he was.
+            val session = store.loadSession()?.let { runCatching { JSONObject(it) }.getOrNull() }
             val lost = store.unreadableBooth
             _state.value = _state.value.copy(
                 index = index,
                 lists = lists,
                 booth = booth,
                 loading = false,
+                undo = store.loadUndo()?.let { undoFromJson(it) }
+                    ?.takeIf { it.isFresh(System.currentTimeMillis()) },
+                tab = session?.optString("tab")?.takeIf { it in KNOWN_TABS } ?: "HOME",
+                query = session?.optString("query").orEmpty(),
+                familyQuery = session?.optString("familyQuery").orEmpty(),
+                filter = UiState.Filter.byName[session?.optString("filter") ?: ""] ?: UiState.Filter.ALL,
+                casteFilter = session?.optString("casteFilter").orEmpty(),
+                partyFilter = session?.optString("partyFilter").orEmpty(),
+                addressFilter = session?.optString("addressFilter").orEmpty(),
+                notInFileOnly = session?.optBoolean("notInFileOnly") ?: false,
                 message = lost?.let {
                     "The saved list could not be read and was set aside as " +
                         "${it.second}. Nothing was deleted. Do not import over it until " +
@@ -324,6 +369,42 @@ class SurveyViewModel(
                 },
             )
         }
+    }
+
+    /**
+     * Writes the session down, debounced.
+     *
+     * Debounced because a search fires on every keystroke and this file is a handful of
+     * lines; without it, typing a name would write it ten times.
+     */
+    fun rememberSession() {
+        sessionJob?.cancel()
+        sessionJob = viewModelScope.launch {
+            delay(700)
+            val s = _state.value
+            store.saveSession(
+                JSONObject().apply {
+                    put("tab", s.tab)
+                    put("query", s.query)
+                    put("familyQuery", s.familyQuery)
+                    put("filter", s.filter.name)
+                    put("casteFilter", s.casteFilter)
+                    put("partyFilter", s.partyFilter)
+                    put("addressFilter", s.addressFilter)
+                    put("notInFileOnly", s.notInFileOnly)
+                }.toString()
+            )
+        }
+    }
+
+    private var sessionJob: Job? = null
+
+    private companion object {
+        /** Tab names this build knows. A session from a future build is ignored, not obeyed. */
+        val KNOWN_TABS = setOf("HOME", "VOTERS", "FAMILIES", "SETTINGS")
+
+        /** Six hours: several rounds of street work, not a file per mark. */
+        const val AUTO_MIN_GAP_MS = 6L * 60 * 60 * 1000
     }
 
     private fun publish(message: String? = null) {
@@ -361,12 +442,32 @@ class SurveyViewModel(
         val index = indexFor(booth, _state.value.index)
         store.saveIndex(index)
         val before = _state.value.booth
-        _state.value = _state.value.copy(
-            index = index,
-            booth = booth,
-            undo = undoWhat?.let { Undo(it, before, undoInToast) },
-        )
+        val undo = undoWhat?.let { Undo(it, before, System.currentTimeMillis(), undoInToast) }
+        _state.value = _state.value.copy(index = index, booth = booth, undo = undo)
+        // Only when there is something to remember. A booth save with no undo label must
+        // also clear whatever was on offer, or a stale Undo could be pressed against an
+        // action it does not describe.
+        if (undo != null) store.saveUndo(undoJson(undo)) else store.clearUndo()
     }
+
+    /** The undo as it is written down, so it can be written and read by the same code. */
+    private fun undoJson(u: Undo): String = JSONObject().apply {
+        put("what", u.what)
+        put("at", u.at)
+        put("inToast", u.inToast)
+        put("booth", store.boothJson(u.before))
+    }.toString()
+
+    private fun undoFromJson(text: String): Undo? = runCatching {
+        val o = JSONObject(text)
+        val booth = store.boothFromJson(o.getString("booth")) ?: return null
+        Undo(
+            what = o.getString("what"),
+            before = booth,
+            at = o.getLong("at"),
+            inToast = o.optBoolean("inToast", true),
+        )
+    }.getOrNull()
 
     /**
      * Puts the last regrettable change back, once.
@@ -383,6 +484,7 @@ class SurveyViewModel(
             return
         }
         viewModelScope.launch {
+            store.clearUndo()
             saveBooth(u.before)
             _state.value = _state.value.copy(
                 undo = null,
@@ -559,6 +661,8 @@ class SurveyViewModel(
     // --- navigation ---------------------------------------------------------
 
     fun setQuery(q: String) { _state.value = _state.value.copy(query = q) }
+
+    fun setTab(name: String) { _state.value = _state.value.copy(tab = name) }
     fun setFamilyQuery(q: String) { _state.value = _state.value.copy(familyQuery = q) }
     fun setFilter(f: UiState.Filter) { _state.value = _state.value.copy(filter = f) }
     fun setCasteFilter(v: String) { _state.value = _state.value.copy(casteFilter = v) }
@@ -1203,6 +1307,123 @@ class SurveyViewModel(
 
     /** The shared vocabulary, for exports that run after the composition has gone. */
     fun activeLists(): Lists = _state.value.lists
+
+    // --- backup ------------------------------------------------------------
+
+    /**
+     * The manual one: writes a backup and hands the bytes back for the save dialog.
+     *
+     * Returns the text rather than saving it, because where it goes is chosen by the
+     * system picker and only the caller knows what it was called.
+     */
+    fun buildBackup(): String = store.backupJson(_state.value.booth, _state.value.lists)
+
+    /** The name the save dialog offers. Booth, then the moment, for the same reason exports are dated. */
+    fun backupFileName(): String {
+        val no = _state.value.booth.boothNo.trim()
+        val who = if (no.isEmpty()) "booth" else "booth-$no"
+        val now = java.util.Date()
+        val fmt = java.text.SimpleDateFormat("ddMMM-HHmm", java.util.Locale.getDefault())
+        return "$who-backup-${fmt.format(now)}.json"
+    }
+
+    /**
+     * Reads a backup and describes it, without applying it.
+     *
+     * Returns null when the file is not one of ours -- a spreadsheet he picked by mistake
+     * should say so rather than half-restore. Otherwise the booth's name and how many people
+     * are in it, which is what he needs in front of him before agreeing to replace a day of
+     * work with an older copy.
+     */
+    fun inspectBackup(text: String, then: (Pair<String, Int>?) -> Unit) {
+        val b = store.readBackup(text)
+        then(b?.let { it.booth.displayTitle to it.booth.voters.size })
+    }
+
+    /** Puts a backup back, keeping the booth it replaces. Refuses anything not a backup. */
+    fun restoreBackup(text: String): String? {
+        val b = store.readBackup(text) ?: return "That file is not a Booth Survey backup."
+        val booth = b.booth
+        val current = _state.value.booth
+        // Whatever it replaces is written out first, under its own name. A restore can
+        // destroy a week of work, so it must never be the only copy of anything.
+        val replacedJson = current
+            .takeIf { it.id == booth.id && it.voters.isNotEmpty() }
+            ?.let { store.boothJson(it) }
+        viewModelScope.launch {
+            replacedJson?.let {
+                store.keepCopy("replaced-${booth.id}-${System.currentTimeMillis()}.json", it)
+            }
+            store.saveBooth(booth)
+            store.saveLists(b.lists)
+            val entry = Store.Index.Entry(
+                id = booth.id,
+                boothNo = booth.boothNo,
+                mandal = booth.mandal,
+                townWard = booth.townWard,
+                label = booth.label,
+                size = booth.voters.size,
+                done = booth.voters.count { it.visited },
+                notInFile = booth.voters.count { it.notInLatestFile },
+                updatedAt = System.currentTimeMillis(),
+            )
+            val index = _state.value.index.copy(
+                activeId = booth.id,
+                booths = _state.value.index.booths.filterNot { it.id == booth.id } + entry,
+            )
+            store.saveIndex(index)
+            _state.value = _state.value.copy(
+                index = index,
+                booth = booth,
+                lists = b.lists,
+                undo = null,
+                openVoterId = null,
+                openFamilyId = null,
+                message = "${booth.displayTitle} restored. ${booth.voters.size} people in it.",
+            )
+            store.clearUndo()
+        }
+        return null
+    }
+
+    /**
+     * The automatic one.
+     *
+     * Written to Downloads/Booth Survey/, so it lands somewhere he can see and copy off
+     * without being told how. It only runs when two things are true: the booth is actually
+     * different from the last automatic backup, and either that was on an earlier day or
+     * it is more than [AUTO_MIN_GAP_MS] ago. Without the first, simply opening the app
+     * would write files; without the second, a morning's work would write one per change.
+     *
+     * Deliberately not a background service. A surveyor opening the app and the app keeping
+     * a copy is enough, and a service would cost battery on a phone that has to last a
+     * day outdoors.
+     */
+    private val lastAutoAt: Long get() = store.lastAutoAt()
+    private val lastAutoFingerprint: String get() = store.lastAutoFingerprint()
+
+    fun autoBackupIfDue(now: Long = System.currentTimeMillis()) {
+        val booth = _state.value.booth
+        if (!_state.value.hasBooth) return
+        val changed = booth.fingerprint() != lastAutoFingerprint
+        if (!changed) return
+        val due = lastAutoAt == 0L ||
+            now - lastAutoAt > AUTO_MIN_GAP_MS ||
+            !sameDay(now, lastAutoAt)
+        if (!due) return
+        viewModelScope.launch {
+            val written = BackupFiles.write(buildBackup(), backupFileName())
+            if (written) {
+                store.noteAutoBackup(now, booth.fingerprint())
+                publish("Saved a backup by itself.")
+            }
+        }
+    }
+
+    private fun sameDay(a: Long, b: Long): Boolean {
+        val f = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault())
+        return f.format(java.util.Date(a)) == f.format(java.util.Date(b))
+    }
 
     /** A message with no action behind it, so there is nothing to take back. */
     fun say(m: String) { _state.value = _state.value.copy(message = m, undo = null) }

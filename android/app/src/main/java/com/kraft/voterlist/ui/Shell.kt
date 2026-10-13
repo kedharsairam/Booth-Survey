@@ -1,5 +1,7 @@
 package com.kraft.voterlist.ui
 
+import androidx.compose.material.icons.filled.Undo
+
 import androidx.compose.material3.AlertDialog
 
 import androidx.compose.ui.text.font.FontWeight
@@ -102,11 +104,26 @@ fun SurveyApp(
     vm: SurveyViewModel,
     busy: Boolean,
     onPickImportFile: () -> Unit,
+    onBackup: () -> Unit,
+    onPickBackupFile: () -> Unit,
+    pendingRestore: Triple<String, String, Int>?,
+    onApplyRestore: () -> Unit,
+    onCancelRestore: () -> Unit,
     onExportXlsx: (Boolean) -> Unit,
     onExportPdf: (Boolean) -> Unit,
 ) {
     val s by vm.state.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
+    // He comes back to where he was. The tab is read from the saved session rather than
+    // remembered through a rotation, because the thing worth remembering is not "the app
+    // was on Voters" -- it is "he was on Voters, filtered to one street, and the phone
+    // went into his pocket".
+    // The tab lives in the state, not in a local. It used to be a remember(), which took
+    // its value once, on the first frame -- and the first frame is before the booth has
+    // loaded, when the tab is still its default. The saved tab arrived a moment later and
+    // was never looked at, so the app opened on Home every time and the session file was
+    // written correctly and then ignored.
+    val tab = runCatching { Tab.valueOf(s.tab) }.getOrDefault(Tab.HOME)
+    fun goTo(t: Tab) = vm.setTab(t.name)
     var sheetOpen by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     var filterOpen by remember { mutableStateOf(false) }
@@ -156,7 +173,7 @@ fun SurveyApp(
                         onClose = { importing = false },
                         // The work continues on the list, not on the file prompt. Closing
                         // here also publishes the counts to the toast via finishImport.
-                        onImported = { vm.finishImport(); importing = false; tab = Tab.VOTERS },
+                        onImported = { vm.finishImport(); importing = false; goTo(Tab.VOTERS) },
                     )
 
                     s.openVoterId != null || s.creatingVoter -> VoterEditScreen(vm, s)
@@ -177,7 +194,7 @@ fun SurveyApp(
                                 Tab.entries.forEach { t ->
                                     NavigationBarItem(
                                         selected = tab == t,
-                                        onClick = { tab = t },
+                                        onClick = { goTo(t) },
                                         // null, not the title: NavigationBarItem merges its
                                         // subtree, so describing the icon here made a screen
                                         // reader announce "Home, home, tab".
@@ -271,6 +288,8 @@ fun SurveyApp(
                                     // one tap starts the job rather than landing on a screen
                                     // that does nothing by itself.
                                     onImport = { importing = true; onPickImportFile() },
+                                    onBackup = onBackup,
+                                    onRestore = onPickBackupFile,
                                 )
                             }
                             }
@@ -299,6 +318,28 @@ fun SurveyApp(
                         },
                     )
                 }
+                pendingRestore?.let { (_, label, count) ->
+                    AlertDialog(
+                        onDismissRequest = onCancelRestore,
+                        title = { Text("Put $label back?") },
+                        text = {
+                            Text(
+                                "This file has $count ${if (count == 1) "person" else "people"} " +
+                                    "in it. Putting it back replaces what is on the phone now, " +
+                                    "including which houses you have been to. What is there " +
+                                    "now is saved first, so it is not lost.",
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = onApplyRestore) {
+                                Text("Put it back", color = Status.pending)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = onCancelRestore) { Text("Keep what is here") }
+                        },
+                    )
+                }
                 MessageToast(
                     // Lift clear of the bottom bar. The toast is a sibling of the scaffold
                     // content column rather than a child of it, so it was aligning to the
@@ -319,6 +360,24 @@ fun SurveyApp(
     // Back walks inwards rather than out: the picker, the sheet, an open editor, then a tab
     // other than Home. Only leaving from Home actually exits, which is what Android users expect
     // and what stops a reflexive swipe from ending a survey.
+    // Anything the session covers, changed, gets written down. It covers the filters as
+    // well as the tab, because the filter is the part he would not think to put back.
+    // `tab` is in the keys, not just read inside. Without it the effect only re-ran when a
+    // *filter* moved, so tapping between tabs saved nothing and the app came back on
+    // whatever the last filter change had left behind.
+    LaunchedEffect(
+        tab, s.query, s.familyQuery, s.filter, s.casteFilter,
+        s.partyFilter, s.addressFilter, s.notInFileOnly,
+    ) {
+        vm.rememberSession()
+    }
+
+    // Once the booth has loaded, and only then: an automatic backup taken before the roll
+    // is read would copy an empty booth over a real one.
+    LaunchedEffect(s.booth.id, s.loading) {
+        if (!s.loading && s.hasBooth) vm.autoBackupIfDue()
+    }
+
     BackHandler(enabled = importing && s.importStep !is ImportStep.NeedsDetails) { importing = false }
     BackHandler(enabled = importing && s.importStep is ImportStep.NeedsDetails) {
         discard = Discard(
@@ -372,7 +431,7 @@ fun SurveyApp(
     BackHandler(
         enabled = !importing && !s.pickingMember && !sheetOpen && s.openVoterId == null &&
             !s.creatingVoter && s.openFamilyId == null && tab != Tab.HOME,
-    ) { tab = Tab.HOME }
+    ) { goTo(Tab.HOME) }
 }
 
 /** A back press that would lose something, and the answer to give when they do. */
@@ -568,6 +627,21 @@ private fun BoothBar(
             // the booth name down to "Booth 1…" -- the one piece of text that must never be
             // ambiguous. The sheet it opens is titled "Export Booth 108", so nothing is left
             // guessing, and the name is there for a screen reader.
+            // The undo that outlived the app.
+            //
+            // Immediately after an action the toast carries Undo, and that is the normal
+            // case. This is the other one: the app was killed -- which Android does to a
+            // phone that has been out all day -- and came back with the undo still held.
+            // Nothing on screen referred to it, and the next thing he did would have
+            // cleared it, so a safety net that had survived was gone anyway.
+            //
+            // Only while there is no message, which is exactly the restored case. The toast
+            // owns it the rest of the time.
+            if (s.undo != null && s.message == null) {
+                IconButton(onClick = { vm.undoLast() }) {
+                    Icon(Icons.Default.Undo, "Put back: ${s.undo.what}")
+                }
+            }
             IconButton(onClick = onExport, enabled = !busy && s.hasBooth) {
                 Icon(Icons.Default.Save, "Print the list", Modifier.size(KraftSpacing.Spacing20))
             }

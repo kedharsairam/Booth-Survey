@@ -32,6 +32,13 @@ import java.io.OutputStream
  * A file that will not parse is moved aside rather than thrown away, and the app continues on
  * the rest. Letting the exception out would mean refusing to start with no way back in.
  */
+/** A backup file, read. Null booths and lists mean the file was not one of ours. */
+data class Backup(
+    val booth: Booth,
+    val lists: Lists,
+    val savedAt: Long,
+)
+
 class Store(private val context: Context, private val root: File? = null) {
 
     /**
@@ -123,6 +130,54 @@ class Store(private val context: Context, private val root: File? = null) {
         }
         parseBooth(root)
     }
+
+    /**
+     * Which tab he was on and what he had filtered to.
+     *
+     * Opening the app dropped him on Home every time. Mid-afternoon he is on Voters,
+     * filtered to one street, and has to re-tap and re-filter before he can carry on --
+     * with a roll of over a thousand, and a queue of people at the door.
+     *
+     * Kept as its own small file rather than in the index, because it is about the session
+     * rather than about the booth, and it changes far more often than either.
+     */
+    suspend fun saveSession(json: String) = withContext(Dispatchers.IO) {
+        runCatching { writeAtomically(sessionFile) { it.write(json.toByteArray(Charsets.UTF_8)) } }
+    }
+
+    /**
+     * The one action that can be taken back, written down so it outlives the process.
+     *
+     * Undo used to live only in memory, which meant it lasted exactly as long as the app
+     * being in the foreground. Android kills background apps on a phone that has been out
+     * all day, and the moment it did the safety net was gone -- so the net was least
+     * reliable exactly when a tired person was most likely to need it.
+     *
+     * Only written when something undoable happens, which is rare: the bulk actions, the
+     * deletes, the family moves. Typing a phone number does not touch this.
+     */
+    suspend fun saveUndo(json: String) = withContext(Dispatchers.IO) {
+        runCatching { writeAtomically(undoFile) { it.write(json.toByteArray(Charsets.UTF_8)) } }
+    }
+
+    suspend fun loadUndo(): String? = withContext(Dispatchers.IO) {
+        if (!undoFile.exists()) null
+        else runCatching { undoFile.readText() }.getOrNull()
+    }
+
+    suspend fun clearUndo() = withContext(Dispatchers.IO) {
+        runCatching { undoFile.delete() }
+        Unit
+    }
+
+    private val undoFile: File get() = File(base, "undo.json")
+
+    suspend fun loadSession(): String? = withContext(Dispatchers.IO) {
+        if (!sessionFile.exists()) null
+        else runCatching { sessionFile.readText() }.getOrNull()
+    }
+
+    private val sessionFile: File get() = File(base, "session.json")
 
     suspend fun saveIndex(index: Index) = withContext(Dispatchers.IO) {
         writeAtomically(indexFile) { out ->
@@ -237,6 +292,105 @@ class Store(private val context: Context, private val root: File? = null) {
             importedAt = root.optLong("importedAt"),
         )
     }
+
+    // --- backup ------------------------------------------------------------
+
+    // --- keeping and noticing ----------------------------------------------
+
+    /**
+     * Writes a copy into the app's own folder and returns whether it worked.
+     *
+     * Used for the "before" copy a restore makes of whatever it is about to replace. It is
+     * not somewhere he will find by himself, which is the trade: it is insurance against
+     * the app doing something wrong, not a backup he is meant to manage.
+     */
+    suspend fun keepCopy(name: String, json: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching { writeAtomically(File(base, name)) { it.write(json.toByteArray(Charsets.UTF_8)) } }
+            .isSuccess
+    }
+
+    /**
+     * When the last automatic backup was taken, and what was in it.
+     *
+     * Stored beside the session rather than inside it: this is bookkeeping about backups,
+     * not about where he was, and the two are written for different reasons.
+     */
+    fun lastAutoAt(): Long = prefs.getLong("lastAutoAt", 0L)
+
+    fun lastAutoFingerprint(): String = prefs.getString("lastAutoFingerprint", "") ?: ""
+
+    suspend fun noteAutoBackup(at: Long, fingerprint: String) {
+        prefs.edit().putLong("lastAutoAt", at).putString("lastAutoFingerprint", fingerprint)
+            .apply()
+    }
+
+    /**
+     * Bookkeeping, not survey data.
+     *
+     * Deliberately not in the booths folder and not in the index: these two values say
+     * when the app last wrote a copy of itself, which is a fact about the phone and not
+     * about anybody's roll.
+     */
+    private val prefs by lazy {
+        context.getSharedPreferences("booth-survey-state", Context.MODE_PRIVATE)
+    }
+
+    /**
+     * A whole booth, and the shared lists, as one file.
+     *
+     * Everything that would be lost if the phone were lost: the people, who has been
+     * visited, who has been skipped, every family and its order, and the caste and address
+     * words typed along the way.
+     *
+     * Not a new format -- the booth goes in exactly as writeBooth writes it, so a backup
+     * restored years later goes through one parser, not two that have drifted apart.
+     */
+    fun backupJson(booth: Booth, lists: Lists): String = JSONObject().apply {
+        put("kind", "booth-survey-backup")
+        put("version", VERSION)
+        put("savedAt", System.currentTimeMillis())
+        put("booth", JSONObject(boothJson(booth)))
+        put("lists", JSONObject().apply {
+            put("castes", JSONArray(lists.castes))
+            put("subCastes", JSONArray(lists.subCastes))
+            put("addresses", JSONArray(lists.addresses))
+            put("parties", JSONArray(lists.parties))
+        })
+    }.toString()
+
+    /** A backup read back, or null if it is not one. */
+    fun readBackup(text: String): Backup? = runCatching {
+        val o = JSONObject(text)
+        if (o.optString("kind") != "booth-survey-backup") return null
+        val booth = boothFromJson(o.getString("booth")) ?: return null
+        val l = o.optJSONObject("lists") ?: JSONObject()
+        fun arr(k: String): List<String> {
+            val a = l.optJSONArray(k) ?: return emptyList()
+            return (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
+        }
+        Backup(
+            booth = booth,
+            lists = Lists(
+                castes = arr("castes").ifEmpty { Lists.DEFAULT_CASTES },
+                subCastes = arr("subCastes"),
+                addresses = arr("addresses"),
+                parties = arr("parties"),
+            ),
+            savedAt = o.optLong("savedAt"),
+        )
+    }.getOrNull()
+
+    /**
+     * A booth as text, and back again.
+     *
+     * Exactly the form the app keeps on disk -- the same writer the file itself uses -- so
+     * a backup is a copy of the real thing rather than a second format that can drift from
+     * it. Both the undo snapshot and the backup file go through here.
+     */
+    fun boothJson(booth: Booth): String = writeBooth(booth)
+
+    fun boothFromJson(text: String): Booth? =
+        runCatching { parseBooth(JSONObject(text)) }.getOrNull()
 
     private fun writeBooth(booth: Booth): String = JSONObject().apply {
         put("version", VERSION)

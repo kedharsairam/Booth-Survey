@@ -1,5 +1,9 @@
 package com.kraft.voterlist
 
+import com.kraft.voterlist.data.Backup
+
+import com.kraft.voterlist.io.BackupFiles
+
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -49,9 +53,51 @@ class MainActivity : ComponentActivity() {
      * removes the storage permission requirement: the grant is scoped to the single URI the
      * user selected.
      */
+    /** True while the save dialog on screen is the manual backup's, not an export's. */
+    private var savingBackup = false
+
+    /**
+     * A backup read and described, waiting on the question of whether to apply it.
+     *
+     * Compose state, not a plain field: the dialog that shows it lives in the setContent
+     * lambda, and assigning an ordinary property does not tell Compose anything happened --
+     * so the question was asked and then never appeared, and the file was silently ignored.
+     */
+    private var pendingRestore by mutableStateOf<Triple<String, String, Int>?>(null)
+
+    /**
+     * Reading a backup back in.
+     *
+     * OpenDocument rather than a fixed folder: the backup may have been written by an
+     * older copy of the app, or copied off the phone by hand, and where it came from is
+     * not something he should have to have arranged.
+     */
+    private val pickBackup =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            lifecycleScope.launch {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching {
+                        contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    }.getOrNull()
+                }
+                when {
+                    text == null -> vm.say("Could not open that file.")
+                    // Nothing is replaced without asking. This is the one control in the
+                    // app that can put a whole booth back to how it was a week ago, so it
+                    // says what is in the file and waits.
+                    else -> vm.inspectBackup(text) { summary ->
+                        if (summary == null) vm.say("That file is not a Booth Survey backup.")
+                        else pendingRestore = Triple(text, summary.first, summary.second)
+                    }
+                }
+            }
+        }
+
     private val createDocument =
         registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
             val write = pending
+            val wasBackup = savingBackup
             pending = null
             Log.i(TAG, "picker returned ${if (uri == null) "nothing" else uri.lastPathSegment}; pending=${write != null}")
             if (uri == null || write == null) return@registerForActivityResult
@@ -74,19 +120,25 @@ class MainActivity : ComponentActivity() {
                         } ?: error("could not open the chosen file")
                     }
                 }.onSuccess {
+                    savingBackup = false
                     // Named, and told where it went. "Saved" alone does not tell a surveyor
-                    // whether to look in Downloads or somewhere else, after an afternoon's work.
+                    // whether to look in Downloads or somewhere else, after an afternoon's
+                    // work.
                     vm.say(
-                        "Saved. Look for the file in the folder you chose — " +
+                        if (wasBackup) "Backup saved."
+                        else "Saved. Look for the file in the folder you chose — " +
                             "Downloads is usually it.",
                     )
                 }.onFailure {
-                    Log.e(TAG, "export failed", it)
+                    savingBackup = false
+                    Log.e(TAG, "write failed", it)
                     // Plain words. The exception's own message is a class name and a file
                     // path -- "java.io.FileNotFoundException: /storage/emulated/0/..."
                     // -- which tells him nothing about what to do differently.
                     vm.say(
-                        "Could not save the file. This usually means that folder is not " +
+                        if (wasBackup) "Could not save the backup. Try choosing Downloads, " +
+                            "and check there is free space."
+                        else "Could not save the file. This usually means that folder is not " +
                             "writable. Try choosing Downloads, and check there is free space.",
                     )
                 }
@@ -121,10 +173,24 @@ class MainActivity : ComponentActivity() {
         return if (no.isEmpty()) "voters" else "booth-$no"
     }
 
+    /**
+     * Day and time, for a filename.
+     *
+     * Five exports in one day were all called booklet-booth-98.pdf, and the save dialog
+     * then numbered them "booklet-booth-98 (1).pdf" and so on, which says nothing about
+     * which is this afternoon's. The date is what he actually needs to tell apart -- he
+     * exports again every time he finishes a stretch of street, because the marks are the
+     * point. Minute as well, because two exports can easily land in the same hour.
+     */
+    private fun stamp(): String =
+        java.text.SimpleDateFormat("ddMMM-HHmm", java.util.Locale.getDefault())
+            .format(java.util.Date())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        BackupFiles.attach(applicationContext)
         setContent {
             var busy by remember { mutableStateOf(false) }
             val s by vm.state.collectAsState()
@@ -140,11 +206,28 @@ class MainActivity : ComponentActivity() {
             SurveyApp(
                 vm = vm,
                 busy = busy,
+                onPickBackupFile = { pickBackup.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                // Reading the state here, inside the composable, is what makes the dialog
+                // appear when it is set.
+                pendingRestore = pendingRestore,
+                onApplyRestore = {
+                    val t = pendingRestore
+                    pendingRestore = null
+                    if (t != null) vm.restoreBackup(t.first)?.let { vm.say(it) }
+                },
+                onCancelRestore = { pendingRestore = null },
+                onBackup = {
+                    savingBackup = true
+                    handOver("application/json", vm.backupFileName()) { out ->
+                        out.write(vm.buildBackup().toByteArray(Charsets.UTF_8))
+                    }
+                },
                 onPickImportFile = { pickImport.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv", "text/comma-separated-values", "application/octet-stream")) },
                 onExportXlsx = { onlyPending ->
+                    val stamp = stamp()
                     handOver(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "survey-${boothFileName()}.xlsx",
+                        "survey-${boothFileName()}-$stamp.xlsx",
                     ) { out ->
                         val booth = vm.activeBooth()
                         XlsxExporter.write(
@@ -161,9 +244,10 @@ class MainActivity : ComponentActivity() {
                 // the voters, so a household keeps printing whole -- dropping the house
                 // because one of its four people is done would quietly shorten the day.
                 onExportPdf = { onlyPending ->
+                    val stamp = stamp()
                     handOver(
                         "application/pdf",
-                        "booklet-${boothFileName()}.pdf",
+                        "booklet-${boothFileName()}-$stamp.pdf",
                     ) { out ->
                         val booth = vm.activeBooth()
                         PdfExporter.write(
