@@ -19,7 +19,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -108,7 +108,7 @@ fun ActSheet(s: UiState, vm: SurveyViewModel, onClose: () -> Unit, onDeleteReque
                 }
                 // These two erase marks he cannot get back. A day of knocks is gone in one tap
                 // otherwise, and there was nothing but a small grey caption to warn him.
-                ActionRow(Icons.Default.Undo, "Mark to visit", "Clears visited and skipped") {
+                ActionRow(Icons.AutoMirrored.Filled.Undo, "Mark to visit", "Clears visited and skipped") {
                     val n = s.selectedCount
                     confirm(
                         if (n == 1) "Clear the mark on 1 person?" else "Clear the marks on $n people?",

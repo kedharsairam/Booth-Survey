@@ -222,6 +222,42 @@ data class UiState(
     val familiesWithMembers: List<FamilyWithMembers> get() = booth.familiesWithMembers
 
     /**
+     * Voter IDs and serials that appear more than once, worked out once for the whole booth.
+     *
+     * Each row used to ask `v.voterIdIsDuplicated(s.voters)` and `v.serialIsDuplicated(
+     * s.voters)`, and both of those scan the entire list. That is two full passes over 1,200
+     * people per visible row, per recomposition -- about 100,000 comparisons for every
+     * frame of scrolling, on the main thread, on the phone this is meant to run on.
+     *
+     * One pass here produces two sets, and answering a row is then a set lookup. It is also
+     * domain logic that a JVM test can reach, which the per-row version never could.
+     */
+    private val repeatedVoterIds: Set<String> by lazy {
+        // Trimmed and lower-cased, which is how BoothImporter matches voter IDs when it
+        // folds a sheet in. They disagreed: a sheet carrying "abc123" against a record
+        // holding "ABC123" would be merged as the same person and not flagged as a clash,
+        // so the app would combine two records quietly and then report nothing. The EPIC
+        // numbers on the official roll are upper case and transcription slips are not, so
+        // the same value in either case is the same identity.
+        voters.map { it.voterId.trim().lowercase() }.filter { it.isNotEmpty() }
+            .groupingBy { it }.eachCount()
+            .filterValues { it > 1 }.keys
+    }
+
+    private val repeatedSerials: Set<Int> by lazy {
+        voters.filter { it.serial > 0 }.groupingBy { it.serial }.eachCount()
+            .filterValues { it > 1 }.keys
+    }
+
+    fun isVoterIdRepeated(voterId: String): Boolean {
+        val key = voterId.trim().lowercase()
+        return key.isNotEmpty() && key in repeatedVoterIds
+    }
+
+    fun isSerialRepeated(serial: Int): Boolean =
+        serial > 0 && serial in repeatedSerials
+
+    /**
      * Families matching the family search, in walking order. Matches the label
      * or any member's name, so finding a house works from either end.
      */
@@ -241,9 +277,10 @@ data class UiState(
     fun familyNamed(familyId: String?): String =
         if (familyId == null) "" else familiesWithMembers.firstOrNull { it.family.id == familyId }?.label ?: ""
 
-    private fun asSurvey() = Survey(booth, lists)
-
-    val printOrder: List<PrintOrder.Block> get() = PrintOrder.blocks(asSurvey())
+    // asSurvey() and printOrder used to sit here. Nothing called either: exports build
+    // their own Survey at the moment they run, and the booklet's block order comes from
+    // PrintOrder.blocks where the export needs it. Dead state on a state object is not
+    // free -- it is a second thing to keep correct.
 
     /** The voter being edited: the saved one, or the unsaved draft. */
     val editing: Voter? get() = draft ?: voters.firstOrNull { it.id == openVoterId }
@@ -298,7 +335,7 @@ data class UiState(
         }
 }
 
-class SurveyViewModel(
+class SurveyViewModel @JvmOverloads constructor(
     app: Application,
     /**
      * Where the store lives. Null is the app's own storage; a test passes a temporary
@@ -362,11 +399,7 @@ class SurveyViewModel(
                 partyFilter = session?.optString("partyFilter").orEmpty(),
                 addressFilter = session?.optString("addressFilter").orEmpty(),
                 notInFileOnly = session?.optBoolean("notInFileOnly") ?: false,
-                message = lost?.let {
-                    "The saved list could not be read and was set aside as " +
-                        "${it.second}. Nothing was deleted. Do not import over it until " +
-                        "you have checked the file."
-                },
+                message = lost?.let { unreadableMessage(it.second) },
             )
         }
     }
@@ -420,7 +453,11 @@ class SurveyViewModel(
             townWard = booth.townWard,
             label = booth.label,
             size = booth.size,
-            done = booth.done,
+            // Visited, not done. The booth switcher prints this as "N visited", and
+            // Booth.done counts a skipped person as done -- so a morning spent skipping
+            // rather than calling made the selector claim visits that had not happened.
+            // Home's headline has always counted visited only; these now agree.
+            done = booth.voters.count { it.visited },
             notInFile = booth.notInFile,
             updatedAt = booth.importedAt,
         )
@@ -437,8 +474,14 @@ class SurveyViewModel(
      * saved without [undoWhat] clears the undo, so a stale one can never be offered against
      * an action it does not describe.
      */
-    private suspend fun saveBooth(booth: Booth, undoWhat: String? = null, undoInToast: Boolean = true) {
-        store.saveBooth(booth)
+    private suspend fun saveBooth(booth: Booth, undoWhat: String? = null, undoInToast: Boolean = true): Boolean {
+        if (!store.saveBooth(booth)) {
+            // The write is checked, and a failure is not passed off as a save. A full disk
+            // used to throw out of this and take the app down with it; now the screen keeps
+            // showing what is on disk and he is told, in words, what happened.
+            say("Could not save. The phone may be out of space. Nothing has been changed.")
+            return false
+        }
         val index = indexFor(booth, _state.value.index)
         store.saveIndex(index)
         val before = _state.value.booth
@@ -448,6 +491,7 @@ class SurveyViewModel(
         // also clear whatever was on offer, or a stale Undo could be pressed against an
         // action it does not describe.
         if (undo != null) store.saveUndo(undoJson(undo)) else store.clearUndo()
+        return true
     }
 
     /** The undo as it is written down, so it can be written and read by the same code. */
@@ -511,14 +555,37 @@ class SurveyViewModel(
                 index = index, booth = booth, query = "",
                 casteFilter = "", partyFilter = "", addressFilter = "", notInFileOnly = false,
                 selectedIds = emptySet(), familyQuery = "", selectedFamilyIds = emptySet(),
+                // The same warning as on launch. It used to be read once in init and never
+                // again, so switching away from a corrupt booth and back showed "No voters
+                // list yet" while the selector still advertised its population -- which
+                // looks exactly like a phone that had never been used, and is the state the
+                // next import overwrites.
+                message = store.unreadableBooth?.takeIf { it.first == id }?.let {
+                    unreadableMessage(it.second)
+                },
             )
         }
     }
 
+    /** The one sentence he gets when a booth file would not read. */
+    private fun unreadableMessage(keptAs: String): String =
+        "The saved list could not be read and was set aside as $keptAs. " +
+            "Nothing was deleted. Do not import over it until you have checked the file."
+
+    /**
+     * Renames the booth from the Settings field.
+     *
+     * Published immediately and written later. This field is bound to state, so with the
+     * old order -- write, then publish -- Compose had no state to render while the disk write
+     * was in flight and reverted the characters. One whole booth serialised per letter was
+     * the other half of it. The same mistake, already fixed and documented on replaceVoter
+     * above, in a second place.
+     */
     fun renameBooth(label: String) {
-        val booth = _state.value.booth
-        if (label.isBlank()) return
-        viewModelScope.launch { saveBooth(booth.copy(label = label.trim())) }
+        val trimmed = label.trim()
+        if (trimmed.isBlank()) return
+        _state.value = _state.value.copy(booth = _state.value.booth.copy(label = trimmed))
+        persistSoon()
     }
 
     // --- dead ---------------------------------------------------------------
@@ -960,10 +1027,16 @@ class SurveyViewModel(
                 "serial" -> {
                     val trimmed = value.trim()
                     val n = trimmed.toIntOrNull()
+                    // Zero is allowed and means "no number yet", which the roll has for
+                    // people added at a door. Negative was not: it stored, it sorted above
+                    // serial 1, it printed as -5 in the booklet's serial column and in the
+                    // spreadsheet, and duplicate detection ignores anything at or below zero,
+                    // so it could be entered twice and both copies would be kept.
+                    if (n != null && n < 0) say("A serial cannot be negative. Leave it blank if there is no number.")
                     if (n == null && trimmed.isNotEmpty() && trimmed.any { it.isDigit() }) {
                         say("A serial is a whole number, like 312.")
                     }
-                    v.copy(serial = n ?: v.serial)
+                    if (n != null && n >= 0) v.copy(serial = n) else v
                 }
                 "voterId" -> v.copy(voterId = value)
                 "name" -> v.copy(name = value)
@@ -1022,7 +1095,14 @@ class SurveyViewModel(
      * nearly always somebody who ought to be in the roll, sitting just past the end of it.
      */
     fun startCreateVoter() {
-        val suggested = (_state.value.booth.voters.maxOfOrNull { it.serial } ?: 0) + 1
+        val highest = _state.value.booth.voters.maxOfOrNull { it.serial } ?: 0
+        // + 1 on Int.MAX_VALUE wraps to Int.MIN_VALUE, which was then stored on confirm
+        // and printed as a negative serial. A roll at the very top of Int is not a real
+        // thing, but offering a number that cannot exist is worse than saying so.
+        val suggested = if (highest >= Int.MAX_VALUE) 0 else highest + 1
+        if (suggested == 0 && highest > 0) {
+            say("That list already has the highest serial a number can be. Type the number you want.")
+        }
         _state.value = _state.value.copy(
             openVoterId = null, creatingVoter = true, draft = Voter(serial = suggested),
         )
@@ -1170,19 +1250,11 @@ class SurveyViewModel(
     /** Moves a member one place up or down, from the arrows or one step of a drag. */
     fun moveMember(familyId: String, voterId: String, by: Int) {
         val booth = _state.value.booth
-        val members = booth.voters.filter { it.familyId == familyId }.sortedBy { it.familyOrder }
-        val from = members.indexOfFirst { it.id == voterId }
-        val to = from + by
-        if (from < 0 || to < 0 || to >= members.size) return
-        val reordered = members.toMutableList()
-        reordered.add(to, reordered.removeAt(from))
-        val order = reordered.map { it.id }.withIndex().associate { (i, id) -> id to i }
-        val voters = booth.voters.map {
-            if (it.familyId != familyId) it else it.copy(familyOrder = order[it.id] ?: it.familyOrder)
-        }
+        val moved = booth.movingMember(familyId, voterId, by)
+        if (moved === booth) return
         // Quiet: an arrow tap is not an announcement, but a drag that ends up wrong still
         // has to be repairable without four more taps.
-        viewModelScope.launch { saveBooth(booth.copy(voters = voters), undoWhat = "the move", undoInToast = false) }
+        viewModelScope.launch { saveBooth(moved, undoWhat = "the move", undoInToast = false) }
     }
 
     /**
@@ -1192,20 +1264,12 @@ class SurveyViewModel(
      */
     fun moveFamily(familyId: String, by: Int) {
         val booth = _state.value.booth
-        val ordered = booth.families.sortedBy { it.order }
-        val from = ordered.indexOfFirst { it.id == familyId }
-        val to = from + by
-        if (from < 0 || to < 0 || to >= ordered.size) return
-        val reordered = ordered.toMutableList()
-        reordered.add(to, reordered.removeAt(from))
-        val order = reordered.map { it.id }.withIndex().associate { (i, id) -> id to i }
-        val families = booth.families.map {
-            it.copy(order = order[it.id] ?: it.order)
-        }
+        val moved = booth.movingFamily(familyId, by)
+        if (moved === booth) return
         // The printed walking order is the artefact this app exists to produce, so a drag
         // that lands wrong must be repairable. No toast: a toast on every arrow tap, and on
         // every step of a drag, is noise that hides the one that mattered.
-        viewModelScope.launch { saveBooth(booth.copy(families = families), undoWhat = "the move", undoInToast = false) }
+        viewModelScope.launch { saveBooth(moved, undoWhat = "the move", undoInToast = false) }
     }
 
     // --- managed lists ------------------------------------------------------
@@ -1351,26 +1415,30 @@ class SurveyViewModel(
             .takeIf { it.id == booth.id && it.voters.isNotEmpty() }
             ?.let { store.boothJson(it) }
         viewModelScope.launch {
-            replacedJson?.let {
-                store.keepCopy("replaced-${booth.id}-${System.currentTimeMillis()}.json", it)
+            if (replacedJson != null) {
+                // Checked, and acted on. This result used to be dropped, so the dialog's
+                // promise -- "what is there now is saved first, so it is not lost" -- was
+                // made and then the save below destroyed it anyway. A restore can put a
+                // week of work back a week, and the one guard standing between him and an
+                // unrecoverable afternoon has to be real.
+                val kept = store.keepCopy(
+                    "replaced-${booth.id}-${System.currentTimeMillis()}.json", replacedJson
+                )
+                if (!kept) {
+                    _state.value = _state.value.copy(
+                        message = "Could not save a copy of what is there now, so nothing " +
+                            "has been changed. The phone may be out of space.",
+                    )
+                    return@launch
+                }
             }
             store.saveBooth(booth)
             store.saveLists(b.lists)
-            val entry = Store.Index.Entry(
-                id = booth.id,
-                boothNo = booth.boothNo,
-                mandal = booth.mandal,
-                townWard = booth.townWard,
-                label = booth.label,
-                size = booth.voters.size,
-                done = booth.voters.count { it.visited },
-                notInFile = booth.voters.count { it.notInLatestFile },
-                updatedAt = System.currentTimeMillis(),
-            )
-            val index = _state.value.index.copy(
-                activeId = booth.id,
-                booths = _state.value.index.booths.filterNot { it.id == booth.id } + entry,
-            )
+            // Through indexFor, not a second hand-built entry. restore used to build its own,
+            // and the two had already drifted on what "done" meant -- one counted visited and
+            // skipped, the other visited alone -- so the same booth showed a different number
+            // in the selector after a restore than before it. One builder now.
+            val index = indexFor(booth, _state.value.index)
             store.saveIndex(index)
             _state.value = _state.value.copy(
                 index = index,
@@ -1405,18 +1473,30 @@ class SurveyViewModel(
     fun autoBackupIfDue(now: Long = System.currentTimeMillis()) {
         val booth = _state.value.booth
         if (!_state.value.hasBooth) return
-        val changed = booth.fingerprint() != lastAutoFingerprint
-        if (!changed) return
+        val fingerprint = booth.fingerprint()
+        if (fingerprint == lastAutoFingerprint) return
         val due = lastAutoAt == 0L ||
             now - lastAutoAt > AUTO_MIN_GAP_MS ||
             !sameDay(now, lastAutoAt)
         if (!due) return
+        // Snapshotted here, on the main thread, before anything suspends. buildBackup reads
+        // state, and state can change while the file is being written.
+        val json = store.backupJson(booth, _state.value.lists)
+        val name = backupFileName()
         viewModelScope.launch {
-            val written = BackupFiles.write(buildBackup(), backupFileName())
+            // Off the main thread, which viewModelScope is not. This builds a
+            // several-hundred-kilobyte string and then does four ContentResolver round
+            // trips -- insert, open, query, up to twenty deletes -- all of it in the frame
+            // he is trying to tap something in. On the phone this build is aimed at that is
+            // a visible pause, and an ANR if the disk is slow.
+            val written = withContext(Dispatchers.IO) { BackupFiles.write(json, name) }
             if (written) {
-                store.noteAutoBackup(now, booth.fingerprint())
+                store.noteAutoBackup(now, fingerprint)
                 publish("Saved a backup by itself.")
             }
+            // If it did not write, nothing is said and nothing is recorded: the fingerprint
+            // stays unrecorded, so the next launch tries again rather than believing a day
+            // of marks has been kept.
         }
     }
 

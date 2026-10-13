@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The name under the icon on the home screen.
+
+  This was the single place it was written down. The manifest hard-coded "Booth Survey" in
+  two places and pointed at nothing, so lint was reporting this resource as unused while the
+  string it held was the older name — and correcting the manifest to use the token would
+  have silently renamed the app on the phone to "Voter Survey".
+-->
 <resources>
-    <string name="app_name">Voter Survey</string>
+    <string name="app_name">Booth Survey</string>
 </resources>

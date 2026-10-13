@@ -10,7 +10,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.io.OutputStream
 
 /**
@@ -93,42 +92,58 @@ class Store(private val context: Context, private val root: File? = null) {
 
     suspend fun loadLists(): Lists = withContext(Dispatchers.IO) {
         if (!listsFile.exists()) return@withContext Lists()
-        readJson(listsFile)?.let { parseLists(it) } ?: Lists()
+        readJson(listsFile).json?.let { parseLists(it) } ?: Lists()
     }
 
-    suspend fun saveLists(lists: Lists) = withContext(Dispatchers.IO) {
-        writeAtomically(listsFile) { out ->
-            out.write(
-                JSONObject().apply {
-                    put("castes", JSONArray(lists.castes))
-                    put("addresses", JSONArray(lists.addresses))
-                    put("parties", JSONArray(lists.parties))
-                }.toString().toByteArray(Charsets.UTF_8)
-            )
-        }
+    suspend fun saveLists(lists: Lists): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            writeAtomically(listsFile) { out ->
+                out.write(
+                    JSONObject().apply {
+                        put("castes", JSONArray(lists.castes))
+                        put("addresses", JSONArray(lists.addresses))
+                        put("parties", JSONArray(lists.parties))
+                    }.toString().toByteArray(Charsets.UTF_8)
+                )
+            }
+        }.onFailure { Log.e(TAG, "could not save the shared lists: ${it.message}", it) }
+            .isSuccess
     }
 
     /**
-     * A booth that could not be read, and where the copy that was kept goes.
+     * A booth that could not be read, and where the copy that was kept went.
      *
      * Set instead of returning an empty booth. Returning one made a corrupt file look exactly
      * like a phone that had never been used -- the "No voters list yet" screen -- and the next
      * import then merged against that empty booth and wrote over the file. A day's work
      * survived only as a timestamped file in the data folder that nothing ever mentions.
+     *
+     * Volatile for the same reason as the backup's context: it is written on the IO
+     * dispatcher by loadBooth and read on the main thread by the ViewModel. This one string
+     * is the only warning he ever gets that a day's work was set aside, so it must not be
+     * the thing that gets lost to a missing happens-before edge.
      */
+    @Volatile
     var unreadableBooth: Pair<String, String>? = null
 
     /** Reads one booth's voters and families, or an empty booth if its file is unreadable. */
     suspend fun loadBooth(id: String): Booth = withContext(Dispatchers.IO) {
         val f = File(boothsDir, "$id.json")
         if (!f.exists()) return@withContext Booth(id = id, boothNo = "")
-        val root = readJson(f)
-        if (root == null) {
-            val kept = File(boothsDir, "$id-unreadable.json")
-            unreadableBooth = id to (if (kept.exists()) kept.name else "another file")
+        val read = readJson(f)
+        if (read.json == null) {
+            // Name the file only if one was actually kept. The old check tested whether the
+            // kept file existed *before* the rename that creates it, so on the first failure
+            // -- which is the only one he will ever see -- it reported "another file" and he
+            // had no idea where to look for it.
+            unreadableBooth = id to (
+                read.keptAs
+                    ?: "a file in the app's storage that could not be opened at all"
+                )
             return@withContext Booth(id = id, boothNo = "")
         }
-        parseBooth(root)
+        unreadableBooth = null
+        parseBooth(read.json)
     }
 
     /**
@@ -179,29 +194,44 @@ class Store(private val context: Context, private val root: File? = null) {
 
     private val sessionFile: File get() = File(base, "session.json")
 
-    suspend fun saveIndex(index: Index) = withContext(Dispatchers.IO) {
-        writeAtomically(indexFile) { out ->
-            out.write(writeIndex(index).toByteArray(Charsets.UTF_8))
-        }
+    suspend fun saveIndex(index: Index): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            writeAtomically(indexFile) { out ->
+                out.write(writeIndex(index).toByteArray(Charsets.UTF_8))
+            }
+        }.onFailure { Log.e(TAG, "could not save the booth index: ${it.message}", it) }
+            .isSuccess
     }
 
-    suspend fun saveBooth(booth: Booth) = withContext(Dispatchers.IO) {
-        if (!boothsDir.exists()) boothsDir.mkdirs()
-        writeAtomically(File(boothsDir, "${booth.id}.json")) { out ->
-            out.write(writeBooth(booth).toByteArray(Charsets.UTF_8))
-        }
-    }
-
-    suspend fun deleteBooth(id: String) = withContext(Dispatchers.IO) {
-        File(boothsDir, "$id.json").delete()
+    /**
+     * Writes a booth, and says whether it went.
+     *
+     * The answer matters: a full disk used to throw FileNotFoundException out of a
+     * viewModelScope launch, which is the app's default way of dying -- mid-survey, with a
+     * day of marks unwritten. A caller that is told "no" can say so in words and leave the
+     * screen showing what is still on disk rather than what is now lost.
+     */
+    suspend fun saveBooth(booth: Booth): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!boothsDir.exists()) boothsDir.mkdirs()
+            writeAtomically(File(boothsDir, "${booth.id}.json")) { out ->
+                out.write(writeBooth(booth).toByteArray(Charsets.UTF_8))
+            }
+        }.onFailure { Log.e(TAG, "could not save booth ${booth.id}: ${it.message}", it) }
+            .isSuccess
     }
 
     private fun readIndex(): Index {
         if (!indexFile.exists()) return Index()
-        val root = readJson(indexFile) ?: return Index()
+        val root = readJson(indexFile).json ?: return Index()
         val arr = root.optJSONArray("booths") ?: return Index()
-        val entries = (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
+        // optJSONObject, not getJSONObject: one element of the array being a string or a
+        // number instead of an object used to throw out of here, and this is called from the
+        // ViewModel's init on every launch. A hand-edited or half-written index meant the app
+        // could not start at all, with nothing on screen and no way back in. A bad entry is
+        // skipped instead; the rest of the list still draws.
+        val entries = (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
             Index.Entry(
                 id = o.optString("id"),
                 boothNo = o.optString("boothNo"),
@@ -213,13 +243,25 @@ class Store(private val context: Context, private val root: File? = null) {
                 notInFile = o.optInt("notInFile"),
                 updatedAt = o.optLong("updatedAt"),
             )
-        }
+        }.filter { it.id.isNotBlank() }
+            // An index entry whose booth file is gone is not a booth. This is not
+            // hypothetical: the selector was offering a second booth with 1,216 people in
+            // it and nothing behind it, so tapping it showed "No voters list yet" -- which
+            // looks exactly like a phone that had never been used, and is the screen a
+            // fresh import would then write over.
+            //
+            // Safe because the file is always written before the index entry that names it
+            // (see saveBooth), so a real booth can never be missing here. Only an entry
+            // left behind by an import that was abandoned, or by a file moved aside as
+            // unreadable, is dropped. Nothing is deleted: the file, if it exists, stays
+            // exactly where it is.
+            .filter { File(boothsDir, "${it.id}.json").exists() }
         val active = root.stringOrNull("activeId")?.takeIf { id -> entries.any { it.id == id } }
         return Index(active, entries)
     }
 
     private fun writeIndex(index: Index): String = JSONObject().apply {
-        put("version", VERSION)
+        put("version", FILE_VERSION)
         put("activeId", index.activeId ?: JSONObject.NULL)
         put("booths", JSONArray().apply {
             for (e in index.booths) {
@@ -237,61 +279,6 @@ class Store(private val context: Context, private val root: File? = null) {
             }
         })
     }.toString()
-
-    private fun parseBooth(root: JSONObject): Booth {
-        val id = root.optString("id").ifBlank { Voter.newId() }
-        val arr = root.optJSONArray("voters") ?: JSONArray()
-        val voters = ArrayList<Voter>(arr.length())
-        for (i in 0 until arr.length()) {
-            val o = arr.getJSONObject(i)
-            voters += Voter(
-                // A record with no id is either hand-edited or from an older build. Minting one
-                // here keeps such a file usable instead of needing a migration: ids are only
-                // ever compared for equality.
-                id = o.optString("id").ifBlank { Voter.newId() },
-                serial = o.optInt("serial"),
-                voterId = o.optString("voterId"),
-                name = o.optString("name"),
-                house = o.optString("house"),
-                phone = o.optString("phone"),
-                address = o.optString("address"),
-                caste = o.optString("caste"),
-                subCaste = o.optString("subCaste"),
-                party = o.optString("party"),
-                visited = o.optBoolean("visited"),
-                skipped = o.optBoolean("skipped"),
-                familyId = o.stringOrNull("familyId"),
-                familyOrder = o.optInt("familyOrder"),
-                notInLatestFile = o.optBoolean("notInLatestFile"),
-            )
-        }
-        val families = root.optJSONArray("families")?.let { a ->
-            (0 until a.length()).map { i ->
-                // Only the id and the position. A label may be present in a file written
-                // before family names were derived, and it is deliberately ignored: a stored
-                // name has to be kept in step with the arrangement by hand and would
-                // eventually be wrong with nothing to say so.
-                //
-                // Files written before positions existed carry no order: they take their
-                // place in the stored list, which is creation order. That keeps the old
-                // arrangement as the starting point rather than scrambling it, and the first
-                // move assigns the clean run from there.
-                val o = a.getJSONObject(i)
-                val stored = if (o.has("order")) o.optInt("order") else i
-                Family(o.optString("id").ifBlank { Voter.newId() }, stored)
-            }
-        } ?: emptyList()
-        return Booth(
-            id = id,
-            boothNo = root.optString("boothNo"),
-            mandal = root.optString("mandal"),
-            townWard = root.optString("townWard"),
-            label = root.optString("label"),
-            voters = voters,
-            families = families,
-            importedAt = root.optLong("importedAt"),
-        )
-    }
 
     // --- backup ------------------------------------------------------------
 
@@ -345,40 +332,10 @@ class Store(private val context: Context, private val root: File? = null) {
      * Not a new format -- the booth goes in exactly as writeBooth writes it, so a backup
      * restored years later goes through one parser, not two that have drifted apart.
      */
-    fun backupJson(booth: Booth, lists: Lists): String = JSONObject().apply {
-        put("kind", "booth-survey-backup")
-        put("version", VERSION)
-        put("savedAt", System.currentTimeMillis())
-        put("booth", JSONObject(boothJson(booth)))
-        put("lists", JSONObject().apply {
-            put("castes", JSONArray(lists.castes))
-            put("subCastes", JSONArray(lists.subCastes))
-            put("addresses", JSONArray(lists.addresses))
-            put("parties", JSONArray(lists.parties))
-        })
-    }.toString()
+    fun backupJson(booth: Booth, lists: Lists): String = backupJsonOf(booth, lists)
 
     /** A backup read back, or null if it is not one. */
-    fun readBackup(text: String): Backup? = runCatching {
-        val o = JSONObject(text)
-        if (o.optString("kind") != "booth-survey-backup") return null
-        val booth = boothFromJson(o.getString("booth")) ?: return null
-        val l = o.optJSONObject("lists") ?: JSONObject()
-        fun arr(k: String): List<String> {
-            val a = l.optJSONArray(k) ?: return emptyList()
-            return (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
-        }
-        Backup(
-            booth = booth,
-            lists = Lists(
-                castes = arr("castes").ifEmpty { Lists.DEFAULT_CASTES },
-                subCastes = arr("subCastes"),
-                addresses = arr("addresses"),
-                parties = arr("parties"),
-            ),
-            savedAt = o.optLong("savedAt"),
-        )
-    }.getOrNull()
+    fun readBackup(text: String): Backup? = readBackupOf(text)
 
     /**
      * A booth as text, and back again.
@@ -386,52 +343,21 @@ class Store(private val context: Context, private val root: File? = null) {
      * Exactly the form the app keeps on disk -- the same writer the file itself uses -- so
      * a backup is a copy of the real thing rather than a second format that can drift from
      * it. Both the undo snapshot and the backup file go through here.
+     *
+     * Thin wrappers over the free functions at the bottom of the file, which is where the
+     * code actually lives so that it can be tested without a Context.
      */
-    fun boothJson(booth: Booth): String = writeBooth(booth)
+    fun boothJson(booth: Booth): String = boothJsonOf(booth)
 
-    fun boothFromJson(text: String): Booth? =
-        runCatching { parseBooth(JSONObject(text)) }.getOrNull()
-
-    private fun writeBooth(booth: Booth): String = JSONObject().apply {
-        put("version", VERSION)
-        put("id", booth.id)
-        put("boothNo", booth.boothNo)
-        put("mandal", booth.mandal)
-        put("townWard", booth.townWard)
-        put("label", booth.label)
-        put("importedAt", booth.importedAt)
-        put("voters", JSONArray().apply {
-            for (v in booth.voters) {
-                put(JSONObject().apply {
-                    put("id", v.id)
-                    put("serial", v.serial)
-                    put("voterId", v.voterId)
-                    put("name", v.name)
-                    put("house", v.house)
-                    put("phone", v.phone)
-                    put("address", v.address)
-                    put("caste", v.caste)
-                    put("subCaste", v.subCaste)
-                    put("party", v.party)
-                    put("visited", v.visited)
-                    put("skipped", v.skipped)
-                    put("familyId", v.familyId ?: JSONObject.NULL)
-                    put("familyOrder", v.familyOrder)
-                    put("notInLatestFile", v.notInLatestFile)
-                })
-            }
-        })
-        put("families", JSONArray().apply {
-            for (f in booth.families) put(JSONObject().apply {
-                put("id", f.id)
-                put("order", f.order)
-            })
-        })
-    }.toString()
+    fun boothFromJson(text: String): Booth? = boothFromJsonOf(text)
 
     private fun parseLists(o: JSONObject): Lists {
+        // optString, not getString: a non-string element used to throw here, and losing the
+        // shared caste and party lists is better than refusing to start over one bad value.
         fun arr(key: String, fallback: List<String>): List<String> =
-            o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: fallback
+            o.optJSONArray(key)?.let { a ->
+                (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
+            } ?: fallback
         return Lists(
             castes = arr("castes", Lists.DEFAULT_CASTES),
             addresses = arr("addresses", emptyList()),
@@ -442,19 +368,33 @@ class Store(private val context: Context, private val root: File? = null) {
     /**
      * Reads a JSON file, moving it aside if it will not parse.
      *
-     * Returns null rather than throwing, so one damaged file costs you that file and not the
-     * app. The damaged copy is kept under a timestamped name: it is the only thing left if
-     * something went wrong, and deleting the evidence of a bug helps nobody.
+     * Returns a result rather than a JSONObject-or-null, because "null because it was moved
+     * to a file whose name you can give him" and "null because the bytes could not be read at
+     * all" are different facts and he is told different things about them. The old code
+     * returned null for both and had to guess afterwards.
      */
-    private fun readJson(f: File): JSONObject? {
-        val text = runCatching { f.readText() }.getOrNull() ?: return null
-        return runCatching { JSONObject(text) }.getOrElse { e ->
+    private fun readJson(f: File): JsonRead {
+        val text = runCatching { f.readText() }.getOrNull()
+            ?: return JsonRead(json = null, keptAs = null, why = "could not be opened")
+        return try {
+            JsonRead(json = JSONObject(text), keptAs = null, why = null)
+        } catch (e: Exception) {
             val kept = File(f.parentFile, "${f.nameWithoutExtension}-unreadable.json")
-            runCatching { f.renameTo(kept) }
-            Log.e(TAG, "${f.name} unreadable (${e.message}); kept as ${kept.name}", e)
-            null
+            // Best effort. If even the rename fails the original is still there, which is
+            // worse for tidiness and better for not losing anything, so the failure to tidy
+            // is not one to report as if the file were gone.
+            val moved = runCatching { f.renameTo(kept) }.getOrDefault(false)
+            Log.e(TAG, "${f.name} unreadable (${e.message})", e)
+            JsonRead(
+                json = null,
+                keptAs = if (moved) kept.name else null,
+                why = "could not be understood",
+            )
         }
     }
+
+    /** One file read: what came back, and what became of it if nothing did. */
+    private data class JsonRead(val json: JSONObject?, val keptAs: String?, val why: String?)
 
     private suspend fun writeAtomically(target: File, body: (OutputStream) -> Unit) =
         writeLock.withLock {
@@ -484,13 +424,60 @@ class Store(private val context: Context, private val root: File? = null) {
         }
 
     companion object {
-        private const val TAG = "VoterSurvey"
-        private const val VERSION = 3
-
-        /** Opens an asset stream. Only used by the tests, which have no assets. */
-        fun openStream(context: Context, name: String): InputStream = context.assets.open(name)
+        internal const val TAG = "VoterSurvey"
     }
 }
+
+/**
+ * The four JSON shapes, as free functions rather than methods on [Store].
+ *
+ * None of them touches an Android API. They were methods on a class whose constructor needs
+ * a Context, which put them behind the one thing the Testable principle says you must not
+ * do: domain logic reachable only by standing up a device. That left the parser that once
+ * put 1,129 voters into a family called "null" with no test at all -- the codec most worth
+ * testing was the least testable thing in the app.
+ *
+ * Out here they run on the JVM in milliseconds. Store keeps thin wrappers because its
+ * callers are shorter that way.
+ */
+internal fun boothJsonOf(booth: Booth): String = writeBooth(booth)
+
+internal fun boothFromJsonOf(text: String): Booth? =
+    runCatching { parseBooth(JSONObject(text)) }.getOrNull()
+
+internal fun backupJsonOf(booth: Booth, lists: Lists): String = JSONObject().apply {
+    put("kind", "booth-survey-backup")
+    put("version", FILE_VERSION)
+    put("savedAt", System.currentTimeMillis())
+    put("booth", JSONObject(boothJsonOf(booth)))
+    put("lists", JSONObject().apply {
+        put("castes", JSONArray(lists.castes))
+        put("subCastes", JSONArray(lists.subCastes))
+        put("addresses", JSONArray(lists.addresses))
+        put("parties", JSONArray(lists.parties))
+    })
+}.toString()
+
+internal fun readBackupOf(text: String): Backup? = runCatching {
+    val o = JSONObject(text)
+    if (o.optString("kind") != "booth-survey-backup") return null
+    val booth = boothFromJsonOf(o.optString("booth")) ?: return null
+    val l = o.optJSONObject("lists") ?: JSONObject()
+    fun arr(k: String): List<String> {
+        val a = l.optJSONArray(k) ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
+    }
+    Backup(
+        booth = booth,
+        lists = Lists(
+            castes = arr("castes").ifEmpty { Lists.DEFAULT_CASTES },
+            subCastes = arr("subCastes"),
+            addresses = arr("addresses"),
+            parties = arr("parties"),
+        ),
+        savedAt = o.optLong("savedAt"),
+    )
+}.getOrNull()
 
 /**
  * A string field, treating an absent key, a JSON null and an empty string all the same.
@@ -504,3 +491,103 @@ class Store(private val context: Context, private val root: File? = null) {
  */
 internal fun JSONObject.stringOrNull(key: String): String? =
     if (isNull(key)) null else optString(key).ifBlank { null }
+
+private fun writeBooth(booth: Booth): String = JSONObject().apply {
+    put("version", FILE_VERSION)
+    put("id", booth.id)
+    put("boothNo", booth.boothNo)
+    put("mandal", booth.mandal)
+    put("townWard", booth.townWard)
+    put("label", booth.label)
+    put("importedAt", booth.importedAt)
+    put("voters", JSONArray().apply {
+        for (v in booth.voters) {
+            put(JSONObject().apply {
+                put("id", v.id)
+                put("serial", v.serial)
+                put("voterId", v.voterId)
+                put("name", v.name)
+                put("house", v.house)
+                put("phone", v.phone)
+                put("address", v.address)
+                put("caste", v.caste)
+                put("subCaste", v.subCaste)
+                put("party", v.party)
+                put("visited", v.visited)
+                put("skipped", v.skipped)
+                put("familyId", v.familyId ?: JSONObject.NULL)
+                put("familyOrder", v.familyOrder)
+                put("notInLatestFile", v.notInLatestFile)
+            })
+        }
+    })
+    put("families", JSONArray().apply {
+        for (f in booth.families) put(JSONObject().apply {
+            put("id", f.id)
+            put("order", f.order)
+        })
+    })
+}.toString()
+
+private fun parseBooth(root: JSONObject): Booth {
+    val id = root.optString("id").ifBlank { Voter.newId() }
+    val arr = root.optJSONArray("voters") ?: JSONArray()
+    val voters = ArrayList<Voter>(arr.length())
+    for (i in 0 until arr.length()) {
+        // Skipped rather than thrown on. This is the file holding the whole roll: a
+        // single element that is not an object used to throw JSONException out of
+        // loadBooth, out of the ViewModel's init, and the app could not be opened at all.
+        // Losing one unnamed row out of 1,200 is survivable. Not being able to start is
+        // not.
+        val o = arr.optJSONObject(i) ?: continue
+        voters += Voter(
+            // A record with no id is either hand-edited or from an older build. Minting one
+            // here keeps such a file usable instead of needing a migration: ids are only
+            // ever compared for equality.
+            id = o.optString("id").ifBlank { Voter.newId() },
+            serial = o.optInt("serial"),
+            voterId = o.optString("voterId"),
+            name = o.optString("name"),
+            house = o.optString("house"),
+            phone = o.optString("phone"),
+            address = o.optString("address"),
+            caste = o.optString("caste"),
+            subCaste = o.optString("subCaste"),
+            party = o.optString("party"),
+            visited = o.optBoolean("visited"),
+            skipped = o.optBoolean("skipped"),
+            familyId = o.stringOrNull("familyId"),
+            familyOrder = o.optInt("familyOrder"),
+            notInLatestFile = o.optBoolean("notInLatestFile"),
+        )
+    }
+    val families = root.optJSONArray("families")?.let { a ->
+        (0 until a.length()).mapNotNull { i ->
+            // Only the id and the position. A label may be present in a file written
+            // before family names were derived, and it is deliberately ignored: a stored
+            // name has to be kept in step with the arrangement by hand and would
+            // eventually be wrong with nothing to say so.
+            //
+            // Files written before positions existed carry no order: they take their
+            // place in the stored list, which is creation order. That keeps the old
+            // arrangement as the starting point rather than scrambling it, and the first
+            // move assigns the clean run from there.
+            val o = a.optJSONObject(i) ?: return@mapNotNull null
+            val stored = if (o.has("order")) o.optInt("order") else i
+            Family(o.optString("id").ifBlank { Voter.newId() }, stored)
+        }
+    } ?: emptyList()
+    return Booth(
+        id = id,
+        boothNo = root.optString("boothNo"),
+        mandal = root.optString("mandal"),
+        townWard = root.optString("townWard"),
+        label = root.optString("label"),
+        voters = voters,
+        families = families,
+        importedAt = root.optLong("importedAt"),
+    )
+}
+
+/** Bumped when the shape of a file on disk changes. */
+private const val FILE_VERSION = 3

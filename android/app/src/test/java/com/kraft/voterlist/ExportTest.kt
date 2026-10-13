@@ -211,11 +211,22 @@ class ExportTest {
             ),
             listOf(Family("f1", 0), Family("f2", 1)),
         )
-        val pending = b.copy(voters = b.voters.filter { !it.isDone })
+        // The shared definition, called. This line used to write its own filter,
+        // `filter { !it.isDone }`, which is not the same thing: isDone counts a *skipped*
+        // person as finished, so the copy quietly answered a different question from the one
+        // both exports actually use. It happened to agree on this fixture, which is exactly
+        // how a test like that survives a real regression. ForPendingOnly is `!visited`, and
+        // f2's member 4 here is skipped -- so the copy dropped them and the real one keeps
+        // the household whole, which is what the booklet has to do.
+        val pending = b.forPendingOnly()
         val bytes = java.io.ByteArrayOutputStream().also { out -> XlsxExporter.write(out, pending, Lists()) }.toByteArray()
         val sheet = zipPart(bytes, "xl/worksheets/sheet1.xml")
         assertTrue("f1 lost its pending member", sheet.contains(">2<"))
-        assertTrue("done f2 leaked in", !sheet.contains(">3<") && !sheet.contains(">4<"))
+        assertTrue(
+            "a skipped member is still to visit: the household must stay whole",
+            sheet.contains(">4<"),
+        )
+        assertTrue("the fully visited f2 member must not come back", !sheet.contains(">3<"))
     }
 
     @Test

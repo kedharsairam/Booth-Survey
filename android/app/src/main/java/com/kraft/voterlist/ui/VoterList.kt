@@ -155,8 +155,8 @@ fun VoterListScreen(
                     VoterRow(
                         v = v,
                         familyLabel = s.familyNamed(v.familyId),
-                        duplicated = v.voterIdIsDuplicated(s.voters),
-                        serialDuplicated = v.serialIsDuplicated(s.voters),
+                        duplicated = s.isVoterIdRepeated(v.voterId),
+                        serialDuplicated = s.isSerialRepeated(v.serial),
                         notInFile = v.notInLatestFile,
                         selecting = selecting,
                         ticked = v.id in s.selectedIds,

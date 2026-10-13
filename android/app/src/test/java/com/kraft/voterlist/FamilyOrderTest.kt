@@ -14,6 +14,14 @@ import org.junit.Test
  * three rows and a card tapped once have to land in the same place. Getting the ends
  * wrong is what silently reorders a booth on export, so the boundary cases are the point
  * of these tests rather than the middle of the range.
+ *
+ * **These call the production function.** That is the change. Every test here used to call
+ * `move`, a helper in this file that was a line-for-line copy of the arithmetic inside
+ * SurveyViewModel.moveFamily -- so all nine passed with the real thing deleted, and nothing
+ * in the suite ever called `moveFamily` at all. The arithmetic now lives in
+ * `Booth.movingFamily`, in the data layer, where both the arrows and the drag go through
+ * it and where this file can reach it. Reintroducing the bug the old copy could not see
+ * makes these fail.
  */
 class FamilyOrderTest {
 
@@ -29,19 +37,13 @@ class FamilyOrderTest {
     )
 
     /**
-     * The step an arrow takes, with the same guards the ViewModel applies. Kept as a
-     * helper so each test states the intent -- "one place down", "off the end" -- rather
-     * than re-deriving an index arithmetic that is easy to get subtly wrong.
+     * The walking order after one step of [by], read back off the moved booth.
+     *
+     * Runs the real code and then reads the result back out of it, so these tests cannot
+     * pass unless the production function really produced that order.
      */
-    private fun move(b: Booth, id: String, by: Int): List<String> {
-        val ordered = b.families.sortedBy { it.order }
-        val from = ordered.indexOfFirst { it.id == id }
-        val to = from + by
-        if (from < 0 || to < 0 || to >= ordered.size) return ordered.map { it.id }
-        val reordered = ordered.toMutableList()
-        reordered.add(to, reordered.removeAt(from))
-        return reordered.map { it.id }
-    }
+    private fun move(b: Booth, id: String, by: Int): List<String> =
+        b.movingFamily(id, by).families.sortedBy { it.order }.map { it.id }
 
     @Test
     fun `one place down swaps with the next card`() {

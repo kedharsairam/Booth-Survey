@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12 and later. Two separate transports are turned off here, and they are not the
+  same thing:
+
+    cloud-backup    — uploading to the Google account. Off because this app promises it
+                       sends nothing anywhere.
+    device-transfer — handing the files to a replacement phone over the "bring your stuff
+                       across" setup flow. Off because the app's own About screen tells the
+                       surveyor that the visits do NOT come with a new phone, and printing
+                       the list before he hands the phone in is the advice he is given. A
+                       manifest that quietly did the opposite would make that advice wrong,
+                       and he would have no way to find out.
+
+  The reasoning is the same as backup_rules.xml: a booth file is a list of named voters with
+  government voter IDs, addresses, caste and party. That is not the kind of thing to move
+  because a vendor decided a default was convenient.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

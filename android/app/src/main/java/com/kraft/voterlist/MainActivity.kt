@@ -1,15 +1,12 @@
 package com.kraft.voterlist
 
-import com.kraft.voterlist.data.Backup
-
-import com.kraft.voterlist.io.BackupFiles
-
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +17,7 @@ import com.kraft.voterlist.data.PrintOrder
 import com.kraft.voterlist.data.Survey
 import com.kraft.voterlist.export.PdfExporter
 import com.kraft.voterlist.export.XlsxExporter
+import com.kraft.voterlist.io.BackupFiles
 import com.kraft.voterlist.ui.SurveyViewModel
 import com.kraft.voterlist.ui.SurveyApp
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +30,8 @@ import java.io.OutputStream
  *
  * No permissions are declared and none are requested, and none are needed:
  *
- *   - the roll ships inside the APK and is edited in the app's own internal storage, which
- *     needs no permission on any Android version
+ *   - the roll is imported from a file the surveyor picks and edited in the app's own
+ *     internal storage, which needs no permission on any Android version
  *   - an export is written through the system file picker, which grants access to the one
  *     file the user picked and nothing else
  *   - there is no network permission because nothing here talks to a network
@@ -41,6 +39,10 @@ import java.io.OutputStream
  * That is a deliberate design constraint rather than a lucky outcome. The app is used on a
  * street with no signal and no laptop nearby, and a permission prompt during a survey is a
  * prompt somebody waves through without reading.
+ *
+ * The manifest also sets android:allowBackup="false" and excludes both backup transports in
+ * res/xml. Zero permissions is not much of a promise if Android then uploads the whole
+ * folder to a cloud account by itself. It did, until this was checked.
  */
 class MainActivity : ComponentActivity() {
 
@@ -162,7 +164,17 @@ class MainActivity : ComponentActivity() {
             if (uri != null) vm.onFilePicked(uri)
         }
 
-    private val vm: SurveyViewModel by lazy { SurveyViewModel(application) }
+    /**
+ * Owned by the ViewModelStore, not by this Activity.
+ *
+ * This was `by lazy { SurveyViewModel(application) }`. A ViewModel only gets clear() called
+ * by a ViewModelStore, so that one was never cleared: its viewModelScope kept running after
+ * the Activity was destroyed, and every rotation left a second live ViewModel, with its own
+ * Store and its own writeLock, writing to the same booth file. The mutex documented as the
+ * thing that made concurrent saves safe was per-instance, so a rotation quietly doubled the
+ * writers it was protecting against.
+ */
+private val vm: SurveyViewModel by viewModels()
 
     /**
      * Exports are named after the booth rather than the date, so two booths exported on the
@@ -195,7 +207,11 @@ class MainActivity : ComponentActivity() {
             var busy by remember { mutableStateOf(false) }
             val s by vm.state.collectAsState()
 
-            fun handOver(mime: String, suggested: String, write: (OutputStream) -> Unit) {
+            // The mime type used to be a parameter here and was never read. The contract is
+            // CreateDocument("*/*"), which is deliberate: too narrow a filter and the
+            // picker greys out somewhere he wants to save, and the system picks the
+            // extension from the suggested filename anyway.
+            fun handOver(suggested: String, write: (OutputStream) -> Unit) {
                 busy = true
                 pending = write
                 createDocument.launch(suggested)
@@ -218,17 +234,14 @@ class MainActivity : ComponentActivity() {
                 onCancelRestore = { pendingRestore = null },
                 onBackup = {
                     savingBackup = true
-                    handOver("application/json", vm.backupFileName()) { out ->
+                    handOver(vm.backupFileName()) { out ->
                         out.write(vm.buildBackup().toByteArray(Charsets.UTF_8))
                     }
                 },
                 onPickImportFile = { pickImport.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv", "text/comma-separated-values", "application/octet-stream")) },
                 onExportXlsx = { onlyPending ->
                     val stamp = stamp()
-                    handOver(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "survey-${boothFileName()}-$stamp.xlsx",
-                    ) { out ->
+                    handOver("survey-${boothFileName()}-$stamp.xlsx") { out ->
                         val booth = vm.activeBooth()
                         XlsxExporter.write(
                             out,
@@ -245,10 +258,7 @@ class MainActivity : ComponentActivity() {
                 // because one of its four people is done would quietly shorten the day.
                 onExportPdf = { onlyPending ->
                     val stamp = stamp()
-                    handOver(
-                        "application/pdf",
-                        "booklet-${boothFileName()}-$stamp.pdf",
-                    ) { out ->
+                    handOver("booklet-${boothFileName()}-$stamp.pdf") { out ->
                         val booth = vm.activeBooth()
                         PdfExporter.write(
                             out,

@@ -1,6 +1,6 @@
 package com.kraft.voterlist.ui
 
-import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Undo
 
 import androidx.compose.material3.AlertDialog
 
@@ -34,7 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.Spacer
@@ -81,7 +81,7 @@ import com.kraft.ui.tokens.KraftSpacing
 /** The four places in the app. A bottom bar rather than a drawer: all one tap away. */
 enum class Tab(val title: String, val icon: ImageVector) {
     HOME("Home", Icons.Default.Home),
-    VOTERS("Voters", Icons.Default.List),
+    VOTERS("Voters", Icons.AutoMirrored.Filled.List),
     FAMILIES("Families", Icons.Default.Groups),
     SETTINGS("Settings", Icons.Default.Settings),
 }
@@ -124,9 +124,9 @@ fun SurveyApp(
     // written correctly and then ignored.
     val tab = runCatching { Tab.valueOf(s.tab) }.getOrDefault(Tab.HOME)
     fun goTo(t: Tab) = vm.setTab(t.name)
-    var sheetOpen by remember { mutableStateOf(false) }
-    var importing by remember { mutableStateOf(false) }
-    var filterOpen by remember { mutableStateOf(false) }
+    var sheetOpen by rememberSaveable { mutableStateOf(false) }
+    var importing by rememberSaveable { mutableStateOf(false) }
+    var filterOpen by rememberSaveable { mutableStateOf(false) }
     // The lists' scroll positions live here, not in the screens: opening a voter swaps
     // the whole screen out of composition, which would drop a screen-held state and put
     // you back at the top on return. The shell never leaves, so the position survives
@@ -429,8 +429,14 @@ fun SurveyApp(
         }
     }
     BackHandler(
-        enabled = !importing && !s.pickingMember && !sheetOpen && s.openVoterId == null &&
-            !s.creatingVoter && s.openFamilyId == null && tab != Tab.HOME,
+        // !filterOpen is load-bearing. Compose gives the most recently composed enabled
+        // handler the back press, and this one is composed after the sheet-closing one --
+        // so with the filter sheet open it used to win and jump to Home *behind* the open
+        // sheet, leaving the draft filters there for him to come back to. Every other
+        // overlay above is named in this condition; this one had been missed.
+        enabled = !importing && !s.pickingMember && !sheetOpen && !filterOpen &&
+            s.openVoterId == null && !s.creatingVoter && s.openFamilyId == null &&
+            tab != Tab.HOME,
     ) { goTo(Tab.HOME) }
 }
 
@@ -639,7 +645,7 @@ private fun BoothBar(
             // owns it the rest of the time.
             if (s.undo != null && s.message == null) {
                 IconButton(onClick = { vm.undoLast() }) {
-                    Icon(Icons.Default.Undo, "Put back: ${s.undo.what}")
+                    Icon(Icons.AutoMirrored.Filled.Undo, "Put back: ${s.undo.what}")
                 }
             }
             IconButton(onClick = onExport, enabled = !busy && s.hasBooth) {

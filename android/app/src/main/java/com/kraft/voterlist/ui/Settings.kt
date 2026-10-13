@@ -127,9 +127,18 @@ fun SettingsScreen(
             // phone going to vanish" are the two questions anybody has about an app that
             // holds a day's work, and the honest answers are worth putting where he can
             // read them without asking. Nothing here is marketing.
+            // Asked of the installed package, not read from BuildConfig and certainly not typed in.
+            // It said "version 1.0" while the phone was running 1.1, and had been left
+            // behind through every release since. Which build somebody is holding is the
+            // first thing anyone asks when something looks wrong, and an app that answers
+            // it wrongly is worse than one that does not answer at all.
             Section(
                 "About",
-                "Booth Survey, version 1.0",
+                "Booth Survey, version " +
+                    (runCatching {
+                        LocalContext.current.packageManager
+                            .getPackageInfo(LocalContext.current.packageName, 0).versionName
+                    }.getOrNull() ?: "unknown"),
             )
             Spacer(Modifier.height(Space.sm))
             Text(
@@ -144,21 +153,24 @@ fun SettingsScreen(
             AboutFact(
                 Icons.Default.CloudOff,
                 "Works with no internet",
-                "Nothing you type is sent anywhere. There is no account and nothing to " +
-                    "sign in to.",
+                "Nothing you type is sent anywhere, and nothing is uploaded to the " +
+                    "internet behind your back either. There is no account and nothing " +
+                    "to sign in to.",
             )
             AboutFact(
                 Icons.Default.Lock,
-                "Kept on this phone only",
-                "Your lists live in the app's own storage. Nothing else on the phone can " +
-                    "read them, and no other app can see them.",
+                "Kept on this phone",
+                "Your working lists stay in the app's own storage, which no other app can " +
+                    "open. The app also writes its own backups into a Booth Survey folder " +
+                    "under Downloads — those are ordinary files, so a file manager can see " +
+                    "them. Delete them there any time; the app makes new ones as he works.",
             )
             AboutFact(
                 Icons.Default.PhoneAndroid,
                 "Changing phones",
                 "This phone holds the work. If it is lost or you swap it, the visits you " +
-                    "have recorded do not come with you. Print the list before you hand " +
-                    "the phone in.",
+                    "have recorded do not come with you. Copy a backup off the phone " +
+                    "before you hand it in, and print the list as well.",
             )
             Spacer(Modifier.height(Space.lg))
             Section("Working out how to use it")

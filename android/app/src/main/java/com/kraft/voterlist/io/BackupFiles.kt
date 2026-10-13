@@ -44,8 +44,17 @@ object BackupFiles {
     fun write(json: String, name: String): Boolean {
         val context = appContext ?: return false
         return try {
-            if (hasDownloads()) writeViaMediaStore(context, json, name)
+            // The writer's own answer, not this function's optimism. Both branches below
+            // can fail without throwing -- a full disk, a MediaStore insert that comes back
+            // null -- and this used to throw their answer away and return true anyway, so
+            // the app said "Saved a backup by itself." over nothing having been written,
+            // and then recorded the fingerprint as backed up and never tried again.
+            val written = if (hasDownloads()) writeViaMediaStore(context, json, name)
             else writeViaOwnFolder(context, json, name)
+            if (!written) {
+                Log.w(TAG, "automatic backup did not get written")
+                return false
+            }
             prune(context)
             true
         } catch (e: Exception) {
@@ -81,9 +90,21 @@ object BackupFiles {
         }
         val uri: Uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: return false
-        resolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-            ?: return false
-        return true
+        // insert() makes the row and openOutputStream() fills it. Failing between the two
+        // leaves a zero-byte file sitting in his Downloads folder with a backup's name on
+        // it, which is worse than no file: he would find it, believe it was good, and throw
+        // away a phone to check.
+        return try {
+            val stream = resolver.openOutputStream(uri) ?: return false
+            stream.use {
+                it.write(json.toByteArray(Charsets.UTF_8))
+                it.flush()
+            }
+            true
+        } catch (e: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
     }
 
     private fun ownFolder(context: Context): File =
@@ -181,7 +202,14 @@ object BackupFiles {
      *
      * A static helper has no context of its own, and the backup runs from a background
      * coroutine with no activity to borrow one from.
+     *
+     * Volatile because the two ends live on different threads: attach() runs in onCreate on
+     * the main thread, write() runs from the IO dispatcher. Without it the write can read
+     * the field before the write to it is visible, see null, and return false with nothing
+     * written and nothing logged -- the silent half of the failure this class is careful
+     * about everywhere else.
      */
+    @Volatile
     private var appContext: Context? = null
 
     fun attach(context: Context) {

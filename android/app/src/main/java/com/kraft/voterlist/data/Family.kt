@@ -66,7 +66,50 @@ data class Booth(
     /** Everyone not in a family, in roll order. */
     val unassigned: List<Voter> by lazy { voters.filter { it.familyId == null }.sortedBy { it.serial } }
 
-    fun asSurvey(lists: Lists = Lists()) = Survey(this, lists)
+    // asSurvey() used to sit here and had no callers. The two exports each build a Survey
+    // directly where they need one, which is the clearer place for it.
+
+    /**
+     * Moves one member of a family one place up or down, keeping familyOrder a clean
+     * 0..n-1 run. The booth comes back unchanged if there is nothing to do.
+     *
+     * Out here, as a plain function, rather than only inside the ViewModel. The dragging and
+     * the arrows used to be the only place this existed, so FamilyOrderTest had to
+     * reimplement it line for line -- and all nine of its assertions would have passed with
+     * the real one deleted. A test that copies the code it claims to guard guards nothing.
+     * The drag still drives this; it just does not own it.
+     */
+    fun movingMember(familyId: String, voterId: String, by: Int): Booth {
+        val members = voters.filter { it.familyId == familyId }.sortedBy { it.familyOrder }
+        val from = members.indexOfFirst { it.id == voterId }
+        val to = from + by
+        if (from < 0 || to < 0 || to >= members.size) return this
+        val reordered = members.toMutableList()
+        reordered.add(to, reordered.removeAt(from))
+        val order = reordered.map { it.id }.withIndex().associate { (i, id) -> id to i }
+        return copy(
+            voters = voters.map {
+                if (it.familyId != familyId) it
+                else it.copy(familyOrder = order[it.id] ?: it.familyOrder)
+            }
+        )
+    }
+
+    /**
+     * Moves one family one place up or down in the walking order, reassigning a clean
+     * 0..n-1 run. The printed order is the whole point of the app, so this had a test -- and
+     * the test was testing a copy.
+     */
+    fun movingFamily(familyId: String, by: Int): Booth {
+        val ordered = families.sortedBy { it.order }
+        val from = ordered.indexOfFirst { it.id == familyId }
+        val to = from + by
+        if (from < 0 || to < 0 || to >= ordered.size) return this
+        val reordered = ordered.toMutableList()
+        reordered.add(to, reordered.removeAt(from))
+        val order = reordered.map { it.id }.withIndex().associate { (i, id) -> id to i }
+        return copy(families = families.map { it.copy(order = order[it.id] ?: it.order) })
+    }
 
     /**
      * Drops families nobody is in. Bulk moves and deletes can empty one, and an empty family
@@ -152,15 +195,11 @@ data class FamilyWithMembers(
     val complete: Boolean get() = size > 0 && done == size
     val lowestSerial: Int get() = members.minOfOrNull { it.serial } ?: 0
 
-    /**
-     * Whether the whole household has been knocked at, for the booklet's pending-only run.
-     *
-     * The same question [Booth.forPendingOnly] asks, asked per household rather than per
-     * person, because the booklet keeps a house whole: a house with anyone left in it
-     * prints. Without a shared definition the two exports disagree about who "still to
-     * visit" means, which is exactly the bug this replaced.
-     */
-    fun isFinished(): Boolean = members.all { it.visited }
+    // isFinished() used to live here, byte-identical to PrintOrder.Block.isFinished() --
+    // and the copy here was the one the tests exercised while production used the other.
+    // So the suite was proving a function nothing shipped, and the two could drift apart
+    // without a test noticing. PrintOrder.Block.isFinished() is the single definition;
+    // SurveySemanticsTest now calls it.
 
     /** Whoever is first, which is who the family is named after. */
     val head: Voter? get() = members.firstOrNull { it.name.isNotBlank() } ?: members.firstOrNull()

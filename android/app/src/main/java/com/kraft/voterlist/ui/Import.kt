@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -155,11 +156,16 @@ private fun DetailsStep(
     onClose: () -> Unit,
 ) {
     val remembered = remember { vm.lastImport() }
-    var boothNo by remember { mutableStateOf("") }
-    var mandal by remember { mutableStateOf(remembered.second) }
-    var ward by remember { mutableStateOf(remembered.third) }
-    var label by remember { mutableStateOf("") }
-    var confirming by remember { mutableStateOf(false) }
+    // rememberSaveable, not remember. Rotation is not a rare event on a phone held in one
+    // hand at a doorstep, and plain remember throws all four away on it -- so the booth
+    // number he had just typed off the electoral office's letter, and the ward, were gone
+    // and had to be found again. Same for confirming: a rotation between the question and
+    // the answer is exactly when the question should still be there.
+    var boothNo by rememberSaveable { mutableStateOf("") }
+    var mandal by rememberSaveable { mutableStateOf(remembered.second) }
+    var ward by rememberSaveable { mutableStateOf(remembered.third) }
+    var label by rememberSaveable { mutableStateOf("") }
+    var confirming by rememberSaveable { mutableStateOf(false) }
     // Next on the keyboard walks down the form; Done on the last field puts it away.
     // Without this every field offers Done, which strands the last field behind the
     // keyboard with no way to reach it but scrolling past what you are typing.

@@ -2,9 +2,21 @@
 <!--
   No <uses-permission> of any kind, deliberately.
 
-  The roll is bundled in the APK and edited in internal storage, exports go through the
-  system file picker, and nothing talks to a network. Every one of those is possible without
-  a permission, so asking for one would be asking the user for trust the app does not need.
+  The roll is imported from a file he picks and edited in internal storage, exports go
+  through the system file picker, and nothing talks to a network. Every one of those is
+  possible without a permission, so asking for one would be asking the user for trust the
+  app does not need.
+
+  Note what is NOT here: android:allowBackup. It was "true" until this was checked against
+  the Secure principle, which was a serious miss. Left alone, Android uploads the whole app
+  folder — every voter's name, voter ID, address, caste and party — to the user's Google
+  Drive, and on Android 12+ hands it to a replacement phone as well. No permission, no
+  prompt, no opt-out, and nothing in the app that said so. It is now off twice over:
+  "false" here, and both transports excluded in res/xml/, because allowBackup on its own
+  does not stop device-to-device transfer on every phone.
+
+  The app takes its own backups instead, to places he can see and reach: the automatic one
+  to Downloads/Booth Survey/, the manual one wherever the system save dialog sends it.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -23,16 +35,18 @@
 
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="Booth Survey"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.VoterList">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="Booth Survey"
+            android:label="@string/app_name"
             android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

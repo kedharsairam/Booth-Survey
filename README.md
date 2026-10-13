@@ -102,28 +102,62 @@ Nothing to generate first — there is no seed.
 
 ```sh
 cd android
-~/.local/gradle-8.9/bin/gradle assembleDebug
-cp app/build/outputs/apk/debug/app-debug.apk ../dist/voter-survey.apk
+./gradlew assembleDebug     # for your own phone; an upgrade keeps the data
+./gradlew assembleRelease   # the one that gets given to anybody else
 ```
+
+The release build is no longer a copy of the debug one. It is minified and resource-shrunk
+(19 MB → 1.6 MB; the app draws 36 icons and the icon library ships about 45,000), and it is
+signed with `android/keystore.properties`, which is deliberately not in this repository.
+
+Without that file the release build still succeeds, signed with the debug key, and prints a
+warning saying it must not be handed to a surveyor. A debug-signed APK is `debuggable`,
+which means anyone who plugs the phone into a computer can read the whole voter roll with
+`adb` and no root.
 
 ## Tests
 
 ```sh
-cd android && ~/.local/gradle-8.9/bin/gradle testDebugUnitTest
+cd android && ./gradlew testDebugUnitTest
 ```
 
-83 unit tests, plus a device test for the drag gesture. They concentrate on what quietly
-corrupts data: re-import changing nothing, blank cells not erasing, the arranged family order
-surviving a round-trip, and what "done" and "still to visit" mean — in the headline, in the
-spreadsheet and in the booklet at the same time.
+121 unit tests, plus a device test for the drag gesture. They concentrate on what quietly
+corrupts data: re-import changing nothing, blank cells not erasing, the arranged family
+order surviving a round-trip, the codec that reads a booth file back, and what "done" and
+"still to visit" mean — in the headline, in the spreadsheet and in the booklet at once.
+
+Two of these used to be worse than no test at all. `FamilyOrderTest` reimplemented the family
+reordering instead of calling it, and `ExportTest` guarded the shared "still to visit" filter
+with its own copy, written with the wrong definition. Both would have passed with the
+production code deleted. They now call the real functions, and reintroducing each bug was
+checked to make them fail.
 
 ## Zero permissions
 
 None are declared and none are needed. Verify it rather than trusting it:
 
 ```sh
-$(ls $HOME/Android/Sdk/build-tools/*/aapt2 | head -1) dump permissions dist/voter-survey.apk
+$(ls $HOME/Android/Sdk/build-tools/*/aapt2 | head -1) dump permissions dist/booth-survey-*.apk
 ```
+
+## Nothing leaves the phone
+
+Zero permissions is not much of a promise if the operating system then uploads the app
+folder to a cloud account by itself, which is exactly what `android:allowBackup="true"`
+does. It was `true` here until this was checked against the Secure principle.
+
+It is now off twice over: `allowBackup="false"`, plus both backup transports — cloud backup
+*and* device-to-device transfer — explicitly excluded in `res/xml/`, because `allowBackup`
+on its own does not stop the second one on every phone. Verify that too:
+
+```sh
+aapt2 dump xmltree --file AndroidManifest.xml dist/booth-survey-*.apk | grep -i backup
+```
+
+The app takes its own backups instead, to places the surveyor can see and reach: the
+automatic one to `Downloads/Booth Survey/`, the manual one wherever the system save dialog
+sends it. Those are ordinary files in Downloads, and the About screen says so in as many
+words.
 
 ## Design
 

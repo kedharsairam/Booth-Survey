@@ -111,8 +111,14 @@ object BoothImporter {
             val name = row.name.ifBlank { match.name }
             val house = row.house.ifBlank { match.house }
             val voterId = row.voterId.ifBlank { match.voterId }
-            if (name !== row.name && row.name.isBlank()) blanksKept++
-            if (house !== row.house && row.house.isBlank()) blanksKept++
+            // Counted on what the cell held and what was kept, by value. The old test was
+            // `name !== row.name`, and `!==` on a String asks whether the two are the same
+            // *object*, not whether they are the same word. When both were blank -- which is
+            // the interned empty literal on both sides -- the identity test said "equal" and
+            // the blank was not counted, so the number shown to him under-counted the cells
+            // this exception saved. Said plainly: sheet blank, we have something, kept it.
+            if (row.name.isBlank() && name.isNotBlank()) blanksKept++
+            if (row.house.isBlank() && house.isNotBlank()) blanksKept++
 
             val serial = if (row.serial > 0) row.serial else match.serial
             val merged = match.copy(

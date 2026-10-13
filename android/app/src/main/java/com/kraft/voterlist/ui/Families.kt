@@ -1,6 +1,6 @@
 package com.kraft.voterlist.ui
 
-import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.Undo
 
 import androidx.compose.material.icons.filled.MoreVert
 
@@ -11,7 +11,9 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -111,6 +113,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.launch
+import com.kraft.ui.motion.rememberReduceMotion
 import com.kraft.voterlist.data.FamilyWithMembers
 import com.kraft.voterlist.data.NATURAL_HOUSE_ORDER
 import com.kraft.voterlist.data.Voter
@@ -382,17 +385,31 @@ private fun FamilyCard(
     // *under* its neighbours, which is what makes a drag feel broken rather than plain.
     // The growth is a graphics layer, so the card keeps measuring exactly 82dp and the
     // drag step never shifts under the finger mid-gesture.
+    //
+    // reduceMotion comes from kraft-foundation, which reads the same two things Android
+    // does: Animator duration scale 0, and the accessibility "Remove animations" setting.
+    // These three animations were the only ones in the app and none of them asked. Compose
+    // does not read that setting for you -- there is no ANIMATOR_DURATION_SCALE reference
+    // anywhere in the compose-ui artifact -- so with motion reduced, a surveyor who has
+    // turned it on because movement makes them dizzy still got a card springing and
+    // glowing under their finger.
+    val reduceMotion = rememberReduceMotion()
     val lift by animateFloatAsState(
         targetValue = if (dragging) 1.02f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            )
+        },
         label = "cardLift",
     )
     val outline by animateColorAsState(
         targetValue = if (dragging) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.outlineVariant,
+        animationSpec = if (reduceMotion) snap() else tween(220),
         label = "cardOutline",
     )
     // The card answers the finger before the drag even starts: it settles back a shade on
@@ -406,7 +423,7 @@ private fun FamilyCard(
             pressed -> 0.985f
             else -> 1f
         },
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        animationSpec = if (reduceMotion) snap() else spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "cardPress",
     )
     // Where the arrows ended up, measured rather than assumed. Dragging is the fast way to
@@ -715,7 +732,7 @@ fun FamilyEditScreen(vm: SurveyViewModel, s: UiState) {
                     // four more taps.
                     if (s.undo?.inToast == false) {
                         IconButton(onClick = { vm.undoLast() }) {
-                            Icon(Icons.Default.Undo, "Undo the last move")
+                            Icon(Icons.AutoMirrored.Filled.Undo, "Undo the last move")
                         }
                     }
                 },
@@ -956,17 +973,26 @@ private fun MemberRow(
     // Same three signals as the family cards, for the same reason: grow, outline, and lift
     // clear with zIndex -- without that last one the row slides *under* the one it is
     // passing, which reads as broken rather than plain.
+    // Reduce-motion applies here for the same reason as on the cards: motion is a signal,
+    // not decoration, and a surveyor who has asked for less of it still gets the signal
+    // because the state change itself is not animated away.
+    val reduceMotion = rememberReduceMotion()
     val lift by animateFloatAsState(
         targetValue = if (dragging) 1.02f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            )
+        },
         label = "memberLift",
     )
     val outline by animateColorAsState(
         targetValue = if (dragging) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.outline,
+        animationSpec = if (reduceMotion) snap() else tween(220),
         label = "memberOutline",
     )
     // The row settles back a shade on touch-down, so the hold that will become either a
@@ -977,7 +1003,11 @@ private fun MemberRow(
             pressed -> 0.985f
             else -> 1f
         },
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        },
         label = "memberPress",
     )
     Column(
