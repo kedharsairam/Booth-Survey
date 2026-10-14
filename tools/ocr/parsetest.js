@@ -3,12 +3,12 @@
 // labeltest.js gates the label patterns. This gates what happens to the value once a label has
 // claimed it, which is where the house number has been broken twice by two different causes:
 //
-//   1. The roll sometimes prints the value behind its own abbreviation -- "D.No 91-6-6/2" on
-//      serial 1123, "DOOR NUMBER 93-5-5/5" on serial 1125, confirmed on the card. Reading the
+//   1. The roll sometimes prints the value behind its own abbreviation -- "D.No 90-51-11/6" on
+//      serial 1123, "DOOR NUMBER 90-35-35/8" on serial 1125, confirmed on the card. Reading the
 //      whole string as the value is not untidy, it is wrong: the booklet groups households by
 //      this value, so a prefixed and an unprefixed spelling of one door are two households.
 //   2. The separator after the label is sometimes misread as a letter -- "House Number t
-//      96-5-5/3" is "House Number : 96-5-5/3" with the colon read as "t", and eight cards on
+//      90-41-1/5" is "House Number : 90-41-1/5" with the colon read as "t", and eight cards on
 //      page 19 carry it. The generic rule that strips only punctuation cannot see that.
 //
 // Both are handled by the same fact: a house number begins with a digit. There is no need to
@@ -26,36 +26,36 @@ const { parseLine } = require('./cardread.js');
 
 const CASES = [
   // The plain form, and the separator read three different ways.
-  ['House Number : 95-6-6/1', 'house', '95-6-6/1'],
-  ['House Number: 95-6-6/1', 'house', '95-6-6/1'],
-  ['House Number :96-3-3/5', 'house', '96-3-3/5'],
-  ['House Number (cent) 97-3-3/1', 'house', '97-3-3/1'],
-  ['House Number = 97-6-6/3', 'house', '97-6-6/3'],
-  ['house nn 98-3-3/2', 'house', '98-3-3/2'],
+  ['House Number : 90-5-5/5', 'house', '90-5-5/5'],
+  ['House Number: 90-5-5/5', 'house', '90-5-5/5'],
+  ['House Number :90-2-2/2', 'house', '90-2-2/2'],
+  ['House Number (cent) 90-6-6/6', 'house', '90-6-6/6'],
+  ['House Number = 90-20-20/2', 'house', '90-20-20/2'],
+  ['house nn 90-21-21/3', 'house', '90-21-21/3'],
 
   // The printed prefixes, as the roll prints them and as the recogniser returns them. The
-  // recogniser drops spaces, so "DOOR NUMBER 93-5-5/5" comes back "DOORNUMBER93-5-5/5", and
+  // recogniser drops spaces, so "DOOR NUMBER 90-35-35/8" comes back "DOORNUMBER93-5-5/5", and
   // between "o" and "1" there is no word boundary to anchor on.
-  ['House Number : D.No 91-6-6/2', 'house', '91-6-6/2'],
-  ['House Number : D No 91-6-6/2', 'house', '91-6-6/2'],
-  ['House Number : D.No. 91-6-6/2', 'house', '91-6-6/2'],
-  ['House Number : DOOR NUMBER 93-5-5/5', 'house', '93-5-5/5'],
-  ['House Number : Door No 91-6-6/2', 'house', '91-6-6/2'],
-  ['House Number : DNO93-5-5/5', 'house', '93-5-5/5'],
-  ['House Number : D.No91-6-6/2', 'house', '91-6-6/2'],
-  ['House Number : DOORNO92-5-5/4', 'house', '92-5-5/4'],
-  ['House Number : DOORNUMBER92-6-6/3', 'house', '92-6-6/3'],
-  ['House Number : DNO-96-6-6/2', 'house', '96-6-6/2'],
+  ['House Number : D.No 90-51-11/6', 'house', '90-51-11/6'],
+  ['House Number : D No 90-51-11/6', 'house', '90-51-11/6'],
+  ['House Number : D.No. 90-51-11/6', 'house', '90-51-11/6'],
+  ['House Number : DOOR NUMBER 90-35-35/8', 'house', '90-35-35/8'],
+  ['House Number : Door No 90-51-11/6', 'house', '90-51-11/6'],
+  ['House Number : DNO93-5-5/5', 'house', '90-35-35/8'],
+  ['House Number : D.No90-1-1/1', 'house', '90-51-11/6'],
+  ['House Number : DOORNO92-5-5/4', 'house', '90-34-34/7'],
+  ['House Number : DOORNUMBER92-6-6/3', 'house', '90-52-12/7'],
+  ['House Number : DNO-90-18-18/9', 'house', '90-18-18/9'],
 
   // The separator misread as a letter. Found on page 19, where the colon reads as "t" on
   // eight cards in a row.
-  ['House Number t 96-5-5/3', 'house', '96-5-5/3'],
-  ['House Number 96-5-5/3', 'house', '96-5-5/3'],
+  ['House Number t 90-41-1/5', 'house', '90-41-1/5'],
+  ['House Number 90-41-1/5', 'house', '90-41-1/5'],
 
   // A house value that legitimately contains letters and must keep them.
-  ['House Number : 93-3-3/2', 'house', '93-3-3/2'],
-  ['House Number : 90-3-3/4', 'house', '90-3-3/4'],
-  ['House Number : 96-3-3/5', 'house', '96-3-3/5'],
+  ['House Number : 90-37-37/1', 'house', '90-37-37/1'],
+  ['House Number : 90-31-31/4', 'house', '90-31-31/4'],
+  ['House Number : 90-2-2/2', 'house', '90-2-2/2'],
 
   // The negatives. A fix aimed at the house field must not reach any other field.
   ['Fathers Name  VENKATA', 'father', 'VENKATA'],

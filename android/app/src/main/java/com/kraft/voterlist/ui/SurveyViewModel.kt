@@ -8,10 +8,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kraft.voterlist.data.Booth
 import com.kraft.voterlist.data.Family
+import com.kraft.voterlist.data.dropSlotToOrderIndex
 import com.kraft.voterlist.data.FamilyWithMembers
 import com.kraft.voterlist.data.Lists
 import com.kraft.voterlist.data.PrintOrder
 import com.kraft.voterlist.data.Store
+import com.kraft.voterlist.data.SubCaste
 import com.kraft.voterlist.data.Survey
 import com.kraft.voterlist.data.Voter
 import com.kraft.voterlist.data.matchesLoose
@@ -919,15 +921,31 @@ class SurveyViewModel @JvmOverloads constructor(
     }
 
     fun openVoter(id: String) {
+        // Switching straight from one person to another never closes anything, so without
+        // this the words pending from the person he just left would be filed under the
+        // person he is now looking at -- and a sub caste, against their caste.
+        flushPendingLearn()
         _state.value = _state.value.copy(openVoterId = id, creatingVoter = false, draft = null)
     }
 
     fun closeVoter() {
         // A draft simply stops existing. Nothing was written, so nothing needs undoing.
+        //
+        // The learning is flushed here as well. It used to happen only in
+        // confirmCreateVoter, which meant every value typed into an *existing* voter's
+        // caste, sub caste, address or party was discarded when the editor closed -- the
+        // comment on flushPendingLearn promised "remembered when the editor closes" and the
+        // editor closed without doing it. Nothing was ever written: a lists.json did not
+        // appear on the phone after typing one at a dozen doors.
+        //
+        // It matters more now than it did. A sub caste is filed under the caste it was
+        // typed against, so losing it loses the word *and* the grouping it belonged to.
+        flushPendingLearn()
         _state.value = _state.value.copy(openVoterId = null, creatingVoter = false, draft = null)
     }
 
     fun openFamily(id: String?) {
+        flushPendingLearn()
         _state.value = _state.value.copy(
             openFamilyId = id, creatingVoter = false, draft = null, pickingMember = false,
         )
@@ -979,15 +997,21 @@ class SurveyViewModel @JvmOverloads constructor(
         if (i < 0) return
         val voters = s.booth.voters.toMutableList()
         voters[i] = f(voters[i])
-        // Published before it is written, not after.
+        // Published onto the *current* state, not the one captured above. `f` is
+        // allowed to say something -- changing the caste under a sub caste that does not
+        // belong to it has to tell him it cleared one -- and say() writes the message onto
+        // _state.value while f runs. Re-publishing the captured `s` then threw that message
+        // away, so every explanation raised from inside a field edit was silently dropped
+        // and he was left with a cleared field and no reason for it.
         //
-        // This used to write the booth to disk first and publish from inside that write. A
-        // keystroke therefore did not change `value` until the file had been written, and a
-        // controlled text field whose `value` does not match what is being typed reverts the
-        // keystroke. On the voter form that meant exactly one character per focus: the first
-        // landed once the write finished, and every one after it was thrown away, so "TDP"
-        // came out as "T". A new voter never saw it -- the draft path publishes in place.
-        _state.value = s.copy(booth = s.booth.copy(voters = voters))
+        // It is also published before it is written, not after. Writing the booth to disk
+        // first meant a keystroke did not change `value` until the file had been written,
+        // and a controlled text field whose `value` does not match what is being typed
+        // reverts the keystroke. On the voter form that meant exactly one character per
+        // focus: the first landed once the write finished, and every one after it was
+        // thrown away, so "TDP" came out as "T". A new voter never saw it -- the draft
+        // path publishes in place.
+        _state.value = _state.value.copy(booth = s.booth.copy(voters = voters))
         persistSoon()
     }
 
@@ -1018,7 +1042,23 @@ class SurveyViewModel @JvmOverloads constructor(
     fun setField(field: String, value: String) {
         // A value typed into a list-backed field is remembered when the editor closes, not on
         // every keystroke. Learning it immediately would push a write per character.
-        if (!_state.value.creatingVoter) kindOf(field)?.let { pendingLearn[it] = value.trim() }
+        //
+        // The caste goes with it: a sub caste belongs to whichever caste was on the form when
+        // it was typed, and learning it later -- after the editor closed, or after he changed
+        // the caste above it -- would file it under the wrong parent and then offer it to
+        // every household of that caste.
+        if (!_state.value.creatingVoter) kindOf(field)?.let { kind ->
+            pendingLearn[kind] = PendingLearn(
+                kind = kind,
+                value = value.trim(),
+                // editing, not draft. draft is only populated for a person being *created*;
+                // for somebody already on the roll the value being edited is found through
+                // openVoterId. Reading draft here meant the parent caste was always blank
+                // for a real voter, so every sub caste learned at a door landed in the
+                // unparented bucket and was then offered to every caste.
+                parentCaste = _state.value.editing?.caste.orEmpty(),
+            )
+        }
         editEditing { v ->
             when (field) {
                 // Silently refusing to take a letter, with no word, was the old behaviour:
@@ -1056,7 +1096,25 @@ class SurveyViewModel @JvmOverloads constructor(
                     v.copy(phone = kept.take(10))
                 }
                 "address" -> v.copy(address = value)
-                "caste" -> v.copy(caste = value)
+                "caste" -> {
+                    // Changing the caste under a sub caste that does not belong to it
+                    // leaves a record that says one thing and means another. Cleared, with a
+                    // word -- silently leaving it would put an OC next to a BC-A sub caste
+                    // and hand both to the electoral office.
+                    val newCaste = value.trim()
+                    val stale = v.subCaste.isNotBlank() &&
+                        _state.value.lists.subCasteNamesFor(newCaste)
+                            .none { it.equals(v.subCaste.trim(), ignoreCase = true) }
+                    if (stale) {
+                        say(
+                            "${v.subCaste} is not a $newCaste sub caste, so it has been " +
+                                "cleared. Choose it again from the list."
+                        )
+                        v.copy(caste = newCaste, subCaste = "")
+                    } else {
+                        v.copy(caste = newCaste)
+                    }
+                }
                 "subCaste" -> v.copy(subCaste = value)
                 "party" -> v.copy(party = value)
                 else -> v
@@ -1258,6 +1316,37 @@ class SurveyViewModel @JvmOverloads constructor(
     }
 
     /**
+     * Moves a family to an absolute slot -- what a drag does.
+     *
+     * Separate from [moveFamily] because a drag needs "put it here" and an arrow needs
+     * "move it one place". Sharing one stepping function for both is what made dragging a
+     * long roll unusable: the drag could only ever ask for one step at a time.
+     */
+    fun moveFamilyTo(familyId: String, toIndex: Int) {
+        val s = _state.value
+        val booth = s.booth
+        // `toIndex` is a position in the list the finger was dragging over, which is the
+        // *searched* list. `movingFamilyTo` indexes the whole booth. Handing one to the
+        // other is silent and wrong: search ten houses down for one household, drag it to
+        // the top of what you can see, and it lands at position 0 of the entire printed
+        // order -- the first house on the street. The screen looks identical before and
+        // after because the filter hides the difference, and the booklet comes out with
+        // that household walked first. The search text is remembered, so it would still be
+        // wrong tomorrow.
+        //
+        // Resolved by identity, in the data layer so it can be tested exhaustively.
+        val shown = s.visibleFamilies.map { it.family.id }
+        val fullOrder = booth.families.sortedBy { it.order }.map { it.id }
+        val toFull = dropSlotToOrderIndex(shown, familyId, toIndex, fullOrder)
+        val moved = booth.movingFamilyTo(familyId, toFull)
+        if (moved === booth) return
+        // The printed walking order is the artefact this app exists to produce, so a drag
+        // that lands wrong must be repairable. No toast: one on every step of a drag is
+        // noise that hides the one that mattered.
+        viewModelScope.launch { saveBooth(moved, undoWhat = "the move", undoInToast = false) }
+    }
+
+    /**
      * Moves a family one place up or down in the walking order, from the arrows or one
      * step of a drag. Reassigns the clean run like members do, so the order is always
      * 0..n-1.
@@ -1281,27 +1370,59 @@ class SurveyViewModel @JvmOverloads constructor(
      * empty dropdown on the first house, and a list that has to be curated before work can
      * start is a list that will not be.
      */
-    fun learnValue(kind: Lists.Kind, value: String) {
+    fun learnValue(kind: Lists.Kind, value: String, parentCaste: String? = null) {
         val v = value.trim()
         if (v.isEmpty()) return
-        val current = _state.value.lists.forKind(kind)
+        val lists = _state.value.lists
+        val caste = parentCaste ?: _state.value.editing?.caste.orEmpty()
+        if (kind == Lists.Kind.SUBCASTE) {
+            val names = lists.subCasteNamesFor(caste)
+            if (names.any { it.equals(v, ignoreCase = true) }) return
+            viewModelScope.launch {
+                commitLists(lists.withSubCaste(caste.ifBlank { SubCaste.UNPARENTED },
+                    names + v))
+            }
+            return
+        }
+        val current = lists.forKind(kind)
         if (current.any { it.equals(v, ignoreCase = true) }) return
-        viewModelScope.launch { commitLists(_state.value.lists.with(kind, current + v)) }
+        viewModelScope.launch { commitLists(lists.with(kind, current + v)) }
     }
 
     /** How long editing pauses before the booth is written, in milliseconds. */
     private val saveSettleMs = 250L
 
-    private val pendingLearn = mutableMapOf<Lists.Kind, String>()
+    /**
+     * A value waiting to be learned, with the caste it was typed against.
+     *
+     * [parentCaste] is carried rather than looked up later because "later" is after the
+     * editor closes, and by then the only caste available is the one finally saved -- which
+     * is not necessarily the one the value belonged to.
+     */
+    private data class PendingLearn(
+        val kind: Lists.Kind,
+        val value: String,
+        val parentCaste: String = "",
+    )
+
+    private val pendingLearn = mutableMapOf<Lists.Kind, PendingLearn>()
 
     private fun flushPendingLearn() {
-        val pending = pendingLearn.toMap()
+        val pending = pendingLearn.values.toList()
         pendingLearn.clear()
         if (pending.isEmpty()) return
-        val lists = pending.entries.fold(_state.value.lists) { acc, (kind, value) ->
-            val current = acc.forKind(kind)
-            if (value.isEmpty() || current.any { it.equals(value, ignoreCase = true) }) acc
-            else acc.with(kind, current + value)
+        val lists = pending.fold(_state.value.lists) { acc, p ->
+            if (p.value.isEmpty()) return@fold acc
+            if (p.kind == Lists.Kind.SUBCASTE) {
+                val caste = p.parentCaste.ifBlank { SubCaste.UNPARENTED }
+                val names = acc.subCasteNamesFor(caste)
+                if (names.any { it.equals(p.value, ignoreCase = true) }) acc
+                else acc.withSubCaste(caste, names + p.value)
+            } else {
+                val current = acc.forKind(p.kind)
+                if (current.any { it.equals(p.value, ignoreCase = true) }) acc
+                else acc.with(p.kind, current + p.value)
+            }
         }
         viewModelScope.launch { commitLists(lists) }
     }
@@ -1311,17 +1432,27 @@ class SurveyViewModel @JvmOverloads constructor(
         _state.value = _state.value.copy(lists = lists)
     }
 
-    fun addListValue(kind: Lists.Kind, value: String) {
+    fun addListValue(kind: Lists.Kind, value: String, parentCaste: String? = null) {
         val v = value.trim()
         if (v.isEmpty()) return
-        val current = _state.value.lists.forKind(kind)
+        val lists = _state.value.lists
+        if (kind == Lists.Kind.SUBCASTE) {
+            val caste = parentCaste?.ifBlank { SubCaste.UNPARENTED } ?: SubCaste.UNPARENTED
+            val names = lists.subCasteGroup(caste)
+            if (names.any { it.equals(v, ignoreCase = true) }) {
+                say("$v is already on the $caste list"); return
+            }
+            viewModelScope.launch { commitLists(lists.withSubCaste(caste, names + v)) }
+            return
+        }
+        val current = lists.forKind(kind)
         if (current.any { it.equals(v, ignoreCase = true) }) {
             say("$v is already on the list"); return
         }
-        viewModelScope.launch { commitLists(_state.value.lists.with(kind, current + v)) }
+        viewModelScope.launch { commitLists(lists.with(kind, current + v)) }
     }
 
-    fun removeListValue(kind: Lists.Kind, value: String) {
+    fun removeListValue(kind: Lists.Kind, value: String, parentCaste: String? = null) {
         val lists = _state.value.lists
         val booth = _state.value.booth
         // Caste and sub caste are also per-voter values, so dropping one from its list has
@@ -1339,7 +1470,16 @@ class SurveyViewModel @JvmOverloads constructor(
         }
         viewModelScope.launch {
             saveBooth(cleared)
-            commitLists(lists.with(kind, lists.forKind(kind).filterNot { it.equals(value, true) }))
+            val next = if (kind == Lists.Kind.SUBCASTE) {
+                val caste = parentCaste ?: SubCaste.UNPARENTED
+                lists.withSubCaste(
+                    caste,
+                    lists.subCasteGroup(caste).filterNot { it.equals(value, true) },
+                )
+            } else {
+                lists.with(kind, lists.forKind(kind).filterNot { it.equals(value, true) })
+            }
+            commitLists(next)
         }
     }
 

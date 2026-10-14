@@ -104,6 +104,9 @@ fun SettingsScreen(
     // the other, which pushed everything else off the screen for content that is almost
     // never edited -- the lists fill themselves from what is typed on voters.
     var expanded: Lists.Kind? by remember { mutableStateOf(null) }
+    // Which caste's sub caste list is open. Needed because the sub caste section is one
+    // editor per caste, so `expanded` alone cannot say which one he was looking at.
+    var expandedCaste: String? by remember { mutableStateOf(null) }
     Column(
         Modifier
             .fillMaxSize()
@@ -201,12 +204,32 @@ fun SettingsScreen(
             Spacer(Modifier.height(Space.md))
 
             Lists.Kind.entries.forEach { kind ->
-                ListEditor(
-                    vm, s, kind, fields,
-                    expanded = expanded == kind,
-                    onToggle = { expanded = if (expanded == kind) null else kind },
-                )
-                Spacer(Modifier.height(Space.sm))
+                if (kind == Lists.Kind.SUBCASTE) {
+                    // One editor per caste, because that is how a sub caste is stored and
+                    // how the form offers it. Drawn from the caste list so a caste with no
+                    // sub castes yet still has somewhere to type them, rather than only the
+                    // ones somebody has already used.
+                    s.lists.castesWithSubCastes().forEach { caste ->
+                        ListEditor(
+                            vm, s, kind, fields,
+                            expanded = expanded == kind && expandedCaste == caste,
+                            onToggle = {
+                                expandedCaste = if (expanded == kind && expandedCaste == caste) null
+                                else caste
+                                expanded = kind
+                            },
+                            parentCaste = caste,
+                        )
+                        Spacer(Modifier.height(Space.sm))
+                    }
+                } else {
+                    ListEditor(
+                        vm, s, kind, fields,
+                        expanded = expanded == kind,
+                        onToggle = { expanded = if (expanded == kind) null else kind },
+                    )
+                    Spacer(Modifier.height(Space.sm))
+                }
             }
 
             Spacer(Modifier.height(Space.md))
@@ -284,11 +307,21 @@ private fun ListEditor(
     fields: FieldScroller,
     expanded: Boolean,
     onToggle: () -> Unit,
+    /**
+     * The caste a sub caste list belongs to.
+     *
+     * Null for the three lists that are not grouped. The sub caste editor is drawn once per
+     * caste instead of once for the lot, because that is the shape the data has now: one
+     * flat "Sub caste" list across every caste is exactly the thing that let the form offer
+     * a BC-A sub caste to somebody recorded as OC.
+     */
+    parentCaste: String? = null,
 ) {
     var adding by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
     var removing by remember { mutableStateOf<String?>(null) }
-    val values = s.lists.forKind(kind)
+    val values = if (parentCaste != null) s.lists.subCasteGroup(parentCaste) else s.lists.forKind(kind)
+    val title = if (parentCaste != null) "${kind.title} · $parentCaste" else kind.title
 
     OutlinedCard(
         Modifier.fillMaxWidth(),
@@ -313,7 +346,7 @@ private fun ListEditor(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(kind.title, style = MaterialTheme.typography.titleMedium)
+                    Text(title, style = MaterialTheme.typography.titleMedium)
                     // Collapsed, a count alone says nothing you can act on: "7 values"
                     // could be seven correct entries or seven typos. Showing the first few
                     // means the row tells you whether this list needs tidying before you
@@ -411,7 +444,7 @@ private fun ListEditor(
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it },
-                        label = { Text("Add to ${kind.title.lowercase()}") },
+                        label = { Text("Add to ${title.lowercase()}") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = MaterialTheme.shapes.medium,
@@ -419,7 +452,9 @@ private fun ListEditor(
                     )
                     Spacer(Modifier.width(Space.sm))
                     IconButton(
-                        onClick = { vm.addListValue(kind, text); text = ""; adding = false },
+                        onClick = {
+                            vm.addListValue(kind, text, parentCaste); text = ""; adding = false
+                        },
                         enabled = text.isNotBlank(),
                         modifier = Modifier.size(KraftSpacing.Spacing48),
                     ) {
@@ -428,7 +463,7 @@ private fun ListEditor(
                         // screen-reader user with nothing to tell them apart.
                         Icon(
                             Icons.Default.Check,
-                            "Add to ${kind.title.lowercase()}",
+                            "Add to ${title.lowercase()}",
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -443,7 +478,7 @@ private fun ListEditor(
                     ) {
                         Icon(
                             Icons.Default.Close,
-                            "Cancel adding to ${kind.title.lowercase()}",
+                            "Cancel adding to ${title.lowercase()}",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -487,7 +522,9 @@ private fun ListEditor(
             title = { Text("Remove $value?") },
             text = { Text(body) },
             confirmButton = {
-                TextButton(onClick = { vm.removeListValue(kind, value); removing = null }) {
+                TextButton(onClick = {
+                    vm.removeListValue(kind, value, parentCaste); removing = null
+                }) {
                     Text("Remove", color = Status.bad)
                 }
             },

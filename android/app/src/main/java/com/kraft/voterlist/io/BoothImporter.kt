@@ -74,10 +74,17 @@ object BoothImporter {
     fun merge(existing: Booth, meta: Meta, rows: List<XlsxReader.Row>, now: Long): Outcome {
         val byVoterId = HashMap<String, MutableList<Voter>>()
         val bySerial = HashMap<Int, MutableList<Voter>>()
+        // A row with no voter ID and no usable serial has no key of its own. Keyed on what
+        // it does carry -- the name and the door number -- so a second import of the same
+        // sheet recognises it instead of adding a second copy of the same person.
+        val byNameHouse = HashMap<String, MutableList<Voter>>()
         for (v in existing.voters) {
             val id = v.voterId.trim().lowercase()
             if (id.isNotEmpty()) byVoterId.getOrPut(id) { mutableListOf() }.add(v)
             if (v.serial > 0) bySerial.getOrPut(v.serial) { mutableListOf() }.add(v)
+            nameHouseKey(v.name, v.house)?.let {
+                byNameHouse.getOrPut(it) { mutableListOf() }.add(v)
+            }
         }
 
         val claimed = HashSet<String>()
@@ -93,7 +100,19 @@ object BoothImporter {
                 byVoterId[key]?.firstOrNull { it.id !in claimed }
                     ?: bySerial[row.serial]?.firstOrNull { it.id !in claimed && it.serial > 0 }
             } else {
-                bySerial[row.serial]?.firstOrNull { it.id !in claimed && it.serial > 0 }
+                // No voter ID on the row, so the serial carries it -- unless the serial is
+                // unusable too, which is what an unreadable or blank serial parses to. That
+                // combination has no key at all, and the old lookup asked bySerial[0], which
+                // can never exist because only positive serials are indexed. Every such row
+                // therefore missed, was added again, and left the original badged "not in
+                // the latest file". Two voters in, three out, with one house printed twice.
+                val bySerialKey = if (row.serial > 0) {
+                    bySerial[row.serial]?.firstOrNull { it.id !in claimed && it.serial > 0 }
+                } else {
+                    null
+                }
+                bySerialKey ?: nameHouseKey(row.name, row.house)
+                    ?.let { byNameHouse[it]?.firstOrNull { it.id !in claimed } }
             }
 
             if (match == null) {
@@ -161,4 +180,22 @@ object BoothImporter {
         )
         return outcome
     }
+}
+
+/**
+ * A match key for a row that carries no voter ID and no usable serial.
+ *
+ * The name and the door number together, casefolded and with runs of whitespace collapsed,
+ * because those are the two things such a row does have and the two a person can be found
+ * by. Either one alone is not enough: a ward has far more people than houses, and far more
+ * houses than it has full names.
+ *
+ * Returns null when the row has neither, because a key built from nothing would match the
+ * first voter in the booth rather than nobody.
+ */
+private fun nameHouseKey(name: String, house: String): String? {
+    val n = name.trim().lowercase().replace(Regex("\\s+"), " ")
+    val h = house.trim().lowercase().replace(Regex("\\s+"), " ")
+    if (n.isEmpty() || h.isEmpty()) return null
+    return "$n\u0000$h"
 }

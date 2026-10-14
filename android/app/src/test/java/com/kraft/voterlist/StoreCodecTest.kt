@@ -144,13 +144,28 @@ class StoreCodecTest {
 
     @Test
     fun `a backup round trips the booth and the shared lists`() {
-        val lists = Lists(castes = listOf("BC-A"), addresses = listOf("Main Road"), parties = listOf("IND"))
+        // "BC-A" used to be asserted here as surviving the round trip. It no longer is, and
+        // should not be: it was one of the seven castes the app shipped with, and the ward
+        // works in three. A caste the surveyor typed is a different thing and does survive.
+        // Both are pinned, so the distinction cannot quietly blur.
+        val lists = Lists(
+            castes = listOf("BC", "Konda Reddy"),
+            addresses = listOf("Main Road"),
+            parties = listOf("TDP"),
+        )
         val back = readBackupOf(backupJsonOf(booth(), lists))
         assertNotNull(back)
         assertEquals(3, back!!.booth.voters.size)
-        assertEquals(listOf("BC-A"), back.lists.castes)
+        assertEquals(listOf("BC", "Konda Reddy"), back.lists.castes)
         assertEquals(listOf("Main Road"), back.lists.addresses)
+        assertEquals(listOf("TDP"), back.lists.parties)
         assertTrue("a backup records when it was taken", back.savedAt > 0)
+    }
+
+    @Test
+    fun `a backup whose castes were all built-in falls back to the three`() {
+        val back = readBackupOf(backupJsonOf(booth(), Lists(castes = listOf("BC-A", "SC", "ST"))))
+        assertEquals(Lists.DEFAULT_CASTES, back!!.lists.castes)
     }
 
     @Test

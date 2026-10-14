@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imeNestedScroll
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -24,8 +25,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -50,6 +49,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import com.kraft.voterlist.data.Lists
 import com.kraft.ui.tokens.KraftSpacing
@@ -214,11 +214,12 @@ fun VoterEditScreen(vm: SurveyViewModel, s: UiState) {
                     style = MaterialTheme.typography.titleLarge,
                     color = if (v.isDone) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.width(serialColumnWidth()),
+                    modifier = Modifier.width(numberColumnWidth(listOf(v.serial))),
+                    textAlign = TextAlign.End,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.width(Space.sm))
+                Spacer(Modifier.width(Space.md))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -265,6 +266,29 @@ fun VoterEditScreen(vm: SurveyViewModel, s: UiState) {
                 )
             }
 
+            // Status first, before anything else on the screen.
+            //
+            // It used to be the last section, under House and Survey, which put "Visited"
+            // six swipes down. This is the control that gets used at the door, once per
+            // person, all day -- a booth is 1216 of them -- while Phone number above it is
+            // written down maybe once in a ward. The information he came to record is now
+            // the first thing he sees and the first thing under his thumb; the fields he
+            // fills in when somebody is new to the roll sit below it.
+            if (!s.creatingVoter) {
+                SectionTitle("Status")
+                FormCard {
+                    StatusChoice(v, vm)
+                }
+                if (v.skipped) {
+                    Text(
+                        "Skipped still needs coming back to.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Status.pending,
+                        modifier = Modifier.padding(start = Space.lg, top = Space.sm),
+                    )
+                }
+            }
+
             SectionTitle("Identity")
             FormCard {
                 RowField("Serial", v.serial.takeIf { it != 0 }?.toString() ?: "", vm, "serial",
@@ -289,28 +313,24 @@ fun VoterEditScreen(vm: SurveyViewModel, s: UiState) {
                     imeAction = ImeAction.Next, scroller = fields)
                 Rule()
                 ListRow("Sub caste", v.subCaste, vm, "subCaste", Lists.Kind.SUBCASTE,
-                    s.lists.subCastes, imeAction = ImeAction.Next, scroller = fields)
+                    // Only this caste's sub castes, and only once a caste is chosen.
+                    //
+                    // Offering every sub caste in the ward whichever caste is above it is
+                    // what let the two fields disagree -- an OC recorded against a BC-A sub
+                    // caste, with nothing on screen saying so. With no caste yet the row
+                    // stays shut and says why, rather than offering a list that cannot be
+                    // right: a sub caste with no caste above it has no parent to be checked
+                    // against.
+                    s.lists.subCasteNamesFor(v.caste),
+                    imeAction = ImeAction.Next, scroller = fields,
+                    needsCasteFirst = v.caste.isBlank(),
+                )
                 Rule()
                 ListRow("Party", v.party, vm, "party", Lists.Kind.PARTY, s.lists.parties,
                     imeAction = ImeAction.Next, scroller = fields)
                 Rule()
                 RowField("Phone number", v.phone, vm, "phone", keyboard = KeyboardType.Phone,
                     imeAction = ImeAction.Done, scroller = fields)
-            }
-
-            if (!s.creatingVoter) {
-                SectionTitle("Status")
-                FormCard {
-                    StatusChoice(v, vm)
-                }
-                if (v.skipped) {
-                    Text(
-                        "Skipped still needs coming back to.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Status.pending,
-                        modifier = Modifier.padding(start = Space.lg, top = Space.sm),
-                    )
-                }
             }
 
             Spacer(Modifier.height(Space.xxl))

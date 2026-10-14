@@ -236,7 +236,17 @@ fun SurveyApp(
                             // Losing which booth is on screen is how notes end up on the
                             // wrong household.
                             val subtitle = when (tab) {
-                                Tab.HOME -> null
+                                // Null once there is a booth, because on Home the search
+                                // field sits in that band. Before one, there is no search
+                                // field -- the empty state replaces it -- so the band is
+                                // empty and the bar is shorter than every other tab's.
+                                // That moved Home's empty heading 123px higher than the same
+                                // heading on Voters and Families, which is exactly the jump
+                                // between tabs that showing "empty" consistently is meant
+                                // to remove.
+                                Tab.HOME ->
+                                    if (!s.hasBooth) "No voters yet"
+                                    else null
                                 // Settings borrows the Families phrasing: the bar says which
                                 // booth's data these settings act on, which is the question
                                 // that matters before touching an import or a shared list.
@@ -566,30 +576,21 @@ private fun BoothBar(
                         // chevron. Rendered after the bar instead, it had no anchor to
                         // position against, picked the nearest free space, and hung off the
                         // left edge of the screen covering the booth title it was describing.
-                        DropdownMenu(
+                        AppDropdownMenu(
                             expanded = open,
                             onDismissRequest = { open = false },
+                            title = "Switch booth",
                             modifier = Modifier.widthIn(min = KraftSpacing.ScreenEdge * 9),
                         ) {
                             s.index.booths.forEach { e ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                e.label.ifBlank { "Booth ${e.boothNo}" },
-                                                style = MaterialTheme.typography.bodyLarge,
-                                            )
-                                            Text(
-                                                buildString {
-                                                    if (e.mandal.isNotBlank()) append("${e.mandal}  ")
-                                                    append("${e.size} people")
-                                                    append("  ${e.done} visited")
-                                                    if (e.notInFile > 0) append("  ${e.notInFile} not in file")
-                                                },
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
+                                DropdownChoice(
+                                    label = e.label.ifBlank { "Booth ${e.boothNo}" },
+                                    selected = e.id == s.index.activeId,
+                                    supporting = buildString {
+                                        if (e.mandal.isNotBlank()) append("${e.mandal}  ")
+                                        append("${e.size} people")
+                                        append("  ${e.done} visited")
+                                        if (e.notInFile > 0) append("  ${e.notInFile} not in file")
                                     },
                                     onClick = { vm.selectBooth(e.id); open = false },
                                 )

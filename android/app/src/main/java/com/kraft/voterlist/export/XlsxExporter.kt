@@ -17,12 +17,12 @@ import com.kraft.voterlist.data.PrintOrder
  * no third-party code, no permissions and no network.
  *
  * Every cell is written as an inline string except the three numeric ones, and that is the
- * entire point of this file. A CSV cannot achieve it: a house number like "98-3-3/2" is
+ * entire point of this file. A CSV cannot achieve it: a house number like "90-21-21/3" is
  * text a spreadsheet is entitled to reinterpret as a date, and OnlyOffice, LibreOffice
  * and Excel all will. Quoting does not prevent it, and a leading apostrophe becomes part
  * of the value. Storing the cell as a text type in the file removes the guesswork
  * altogether. Every identifier-looking value is written as text for the same reason: a
- * door number like "98-3-3/2" and a voter ID like "ZZZ9818485" are both things a spreadsheet
+ * door number like "90-21-21/3" and a voter ID like "ZZZ9818485" are both things a spreadsheet
  * is entitled to reinterpret, and both are join keys once this sheet is merged with anything
  * else.
  *

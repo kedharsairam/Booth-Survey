@@ -134,7 +134,7 @@ const HOUSE_WL = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-/. ';
 
 // The house field is the only one read by more than one configuration and
 // voted on. It is also the only genuinely variable field: values run from
-// "91-7-7/1" to "17 3 1/1" to "PLOT NO 304", and the grey diagonal watermark has
+// "90-24-24/6" to "17 3 1/1" to "PLOT NO 304", and the grey diagonal watermark has
 // dark cores that survive thresholding and occasionally append themselves to
 // the digits. Two passes that disagree are recorded as a disagreement rather
 // than silently taking the first answer.

@@ -60,6 +60,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -68,22 +69,37 @@ import com.kraft.voterlist.data.Voter
 import kotlinx.coroutines.launch
 
 /**
- * The width reserved for the serial number: room for four digits at whatever size the app
- * is set to.
+ * The width reserved for a number that leads a row: the widest one actually present.
  *
- * A fixed 48dp fitted four digits only at the default font size. From about 1.5x upwards it
- * showed "31..." instead of 312 -- on the one number a surveyor reads out loud at a door,
- * which is the worst possible place to lose a digit. Sizing from the font scale keeps every
- * digit visible and costs no more room than the text needs at the default size.
+ * This was always four digits' worth, whatever the list held. A booth whose serials run to
+ * 1221 looked right; a family of four, numbered 1 to 3, had a column three times wider than
+ * its contents and the name pushed away from the number by a gap that meant nothing. Worse,
+ * the same 4-digit rule was borrowed onto the family card -- where the number is a position
+ * in a list of households, one or two digits -- so on the screen where a name most needs
+ * the room, the number was reserving for a serial that does not exist.
+ *
+ * So it is measured from the numbers in front of it. The widest number in the visible list
+ * sets the column, every row's number still lines up, and a short list gets a short column.
+ *
+ * The floor is two digits' worth, so a list that currently shows 1..9 does not have its
+ * column jump about as he scrolls; the ceiling is four digits, which is the longest serial
+ * the electoral roll uses.
  */
 @Composable
-fun serialColumnWidth(): Dp {
-    val digits = MaterialTheme.typography.titleLarge.lineHeight.value * 0.62f * 4
-    return (digits * LocalDensity.current.fontScale).dp
-        // The upper bound is a ceiling on a measured text column, not a spacing step: at
-        // a very large font a four-digit serial needs more than the rhythm allows, and
-        // ellipsising it would show the wrong number.
-        .coerceIn(BoothMetrics.TouchTarget, 110.dp) // @kraft-lint-ignore spacing.no-raw-dp, spacing.rhythm — a measured text ceiling, not a spacing step
+fun numberColumnWidth(numbers: List<Int>): Dp {
+    val widest = numbers.maxOfOrNull { it.coerceAtLeast(0).toString().length } ?: 1
+    // Exactly the widest number present, and no floor above one digit. Rounding a list of
+    // single-digit numbers up to a two-digit column is what put the gap back between the
+    // number and the name: the column was half empty on every row, which reads as a mistake
+    // however deliberate it was meant to be.
+    //
+    // The whole list is passed in rather than the visible slice, so the column does not
+    // change width as he scrolls -- a column that resizes under the finger while he is
+    // reading down it is worse than one that is slightly too wide.
+    val digits = widest.coerceIn(1, 4)
+    val line = MaterialTheme.typography.titleLarge.lineHeight.value
+    return (line * 0.62f * digits * LocalDensity.current.fontScale).dp
+        .coerceIn(16.dp, 96.dp) // @kraft-lint-ignore spacing.no-raw-dp, spacing.rhythm — a measured text column, not a spacing step
 }
 
 /**
@@ -149,7 +165,15 @@ fun VoterListScreen(
             LazyColumn(
                 Modifier.fillMaxSize(),
                 state = listState,
-                contentPadding = PaddingValues(bottom = Space.lg + KraftSpacing.Spacing64),
+                // Room for the floating button, which sits over the list rather than in it.
+        //
+        // 80dp was not enough. The button is 56dp tall with a 16dp margin, and the list
+        // kept the last row's *controls* -- the tick box, and on a household the arrows --
+        // under it: measured on the device, the bottom row's checkbox came out 24px wide
+        // against the usual 144px, because the button was sitting on it. The number here
+        // is the button plus its margins plus a hand's width, so the last row can be
+        // scrolled clear and then actually ticked.
+        contentPadding = PaddingValues(bottom = Space.lg + KraftSpacing.Spacing64 + Space.xxl),
             ) {
                 items(s.visible, key = { it.id }) { v ->
                     VoterRow(
@@ -237,28 +261,26 @@ fun VoterListScreen(
 
 @Composable
 private fun EmptyList(s: UiState, vm: SurveyViewModel, onImport: () -> Unit) {
-    Column(Modifier.padding(Space.lg)) {
-        // Says which of the things came up empty. "Nothing matches" on a filtered list
-        // reads as a failure rather than an answer.
-        val because = when {
-            s.query.isNotBlank() || s.hasExtraFilters -> "Nobody matches these filters."
-            s.filter == UiState.Filter.DONE -> "Nobody has been visited yet."
-            s.filter == UiState.Filter.REMAINING -> "Everyone in this booth has been visited."
-            else -> "This booth has nobody in it yet."
-        }
-        Text(
-            because,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    // Says which of the things came up empty. "Nothing matches" on a filtered list
+    // reads as a failure rather than an answer.
+    val because = when {
+        s.query.isNotBlank() || s.hasExtraFilters -> "Nobody matches these filters."
+        s.filter == UiState.Filter.DONE -> "Nobody has been visited yet."
+        s.filter == UiState.Filter.REMAINING -> "Everyone in this booth has been visited."
+        else -> "This booth has nobody in it yet."
+    }
+    // Same top-aligned block as every other empty state, at the same inset. This one had
+    // its own padding and no heading, so an empty list started further left and higher
+    // than the empty app did on the tab next to it.
+    EmptyTab(title = because, body = "", scrollable = false) {
         if (s.query.isNotBlank() || s.hasExtraFilters) {
-            Spacer(Modifier.height(Space.sm))
+            Spacer(Modifier.height(Space.xs))
             TextButton(onClick = { vm.clearListFilters() }) { Text("Clear search and filters") }
         } else if (s.totalCount == 0) {
             // A genuinely empty booth, not a filter that matched nothing: the way
             // forward is the import sheet, so it is offered here rather than leaving
             // the screen a dead end.
-            Spacer(Modifier.height(Space.md))
+            Spacer(Modifier.height(Space.sm))
             Button(onClick = onImport) { Text("Import voters list") }
             Spacer(Modifier.height(Space.sm))
             Text(
@@ -306,21 +328,13 @@ private fun VoterRow(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The serial, big enough to read at arm's length. Finding "serial 312" in the roll
-        // is the most common thing done with this screen, so it gets the most ink.
-        // The width is the font-scaled line height, not a fixed 48dp. Serials run to four
-        // digits and he reads this one out at the door: in a fixed box it was showing "31..."
-        // from about 1.5x font size onwards, so the number he says was the wrong number.
-        Text(
-            v.serial.toString(),
-            style = MaterialTheme.typography.titleLarge,
-            color = if (v.isDone) MaterialTheme.colorScheme.onSurfaceVariant
-            else MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.width(serialColumnWidth()),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.width(Space.sm))
+        // Two lines, the same shape as the family cards and the household rows: the serial
+        // and the name on the first line, everything else under them.
+        //
+        // The serial used to be a column to the left of the whole block, which put it beside
+        // the *middle* of a three-line row rather than beside the name. On a roll where the
+        // job is "find serial 312", a number floating at the side of the row is one more
+        // thing to work out -- it belongs to the name, so it now sits with it.
         Column(
             Modifier
                 .weight(1f)
@@ -329,12 +343,8 @@ private fun VoterRow(
                 // "who is this and have I been".
                 .semantics(mergeDescendants = true) {
                     contentDescription = buildString {
+                        append("Serial ${v.serial}.  ")
                         append(v.name.ifBlank { "No name" })
-                        // Not repeated here. The serial is its own node to the left of
-                        // this one, so saying it in both places made a screen reader walk
-                        // "312", then "JAYRAM, serial 312, door 91-5-5/3" -- and on a
-                        // 1216-row roll, finding serial 312 is the whole job.
-                        //
                         if (v.voterId.isNotBlank()) append(". Voter ID ${v.voterId}")
                         if (v.house.isNotBlank()) append(". Door ${v.house}")
                         if (familyLabel.isNotEmpty()) append(". In $familyLabel")
@@ -342,27 +352,51 @@ private fun VoterRow(
                         if (v.party.isNotBlank()) append(". ${v.party}")
                         if (v.visited) append(". Visited")
                         if (v.skipped) append(". Skipped")
-                        if (duplicated) append(". This voter ID appears twice")
-                        if (serialDuplicated) append(". This serial appears twice")
-                        if (notInFile) append(". Not in the latest file")
-                        if (selecting) append(if (ticked) ". Ticked" else ". Not ticked")
                     }
                 },
         ) {
-            // The name takes the row; every mark docks right. A pill floating right after
-            // a short name is a status that wanders per row -- done must sit in the same
-            // place on every row to be scannable. In selection mode the marks step aside
-            // for the checkbox instead of squeezing beside it: adding 48dp of box to a
-            // row that keeps everything else reflows the details onto another line and
-            // the whole list jumps taller the moment ticking starts.
+            // Line one: the serial and the name. The serial is right-aligned in a column
+            // sized to the widest number on screen, so a one-digit serial ends against its
+            // name rather than sitting at the far end of an empty four-digit column.
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // No fixed-width column here, and that is the difference between this list and
+                // the family screens.
+                //
+                // There the numbers are all the same width -- 1 to 4, or 1 to 6 -- so a
+                // column lines them up and costs nothing. Here they run 1 to 1224, so any
+                // column wide enough for 1224 leaves a one-digit serial adrift in the middle
+                // of the row while the line under it starts at the margin. Right-aligning
+                // fixed the gap and made the offset obvious: the number no longer sat on
+                // the left edge with everything else, it sat where the eye reads it as
+                // belonging to whatever is beside it.
+                //
+                // So the number is simply the first thing on the line, sized to itself, with
+                // a gap after it. Numbers no longer form a perfect vertical column on this
+                // screen; the alternative was a column that is wrong for most rows, and his
+                // eye is not here to compare columns -- it is here to match a name to a
+                // serial at a door.
+                Text(
+                    v.serial.toString(),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = if (v.isDone) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(Space.sm))
                 Text(
                     v.name.ifBlank { "(no name)" },
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                // The marks dock right, on this same line. They were on a line of their
+                // own below the name -- a row holding an icon and a checkbox with nothing
+                // beside them, which is a third line per person on a 1216-row roll and
+                // pushed the caste onto a fourth. Here they sit in the same place on every
+                // row, so "done" is scannable straight down the column, and the detail line
+                // below gets the full width to itself.
                 if (!selecting) {
                     StatusPill(v)
                     // A repeated voter ID means two records for what may be one person, which

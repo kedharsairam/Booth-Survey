@@ -128,8 +128,13 @@ fun ExportSheet(
                 // app's business. What is his is that nothing he typed comes out of the
                 // office file changed, which is what the sentence underneath was trying to
                 // say and never did.
-                "Every answer you have entered, with names and door numbers kept exactly " +
-                    "as you typed them.",
+                // Was "with names and door numbers kept exactly as you typed them", which
+                // is false: an import takes those two back from the sheet, because they are
+                // exactly what an import is for. The other two screens say it both ways.
+                // This is the honest version -- everything he filled in at the door is
+                // carried through, and the two fields the office sheet owns are refreshed.
+                "Every answer you have entered is carried through. Names and door numbers " +
+                    "come from the latest sheet, the way the import works.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(KraftSpacing.Spacing24))

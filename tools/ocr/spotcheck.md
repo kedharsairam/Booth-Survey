@@ -9,14 +9,14 @@ person checking by eye before the finding is relied on.
 These are the ones where a mistake would change the conclusion, so they are listed first. The
 first three are the label read winning; the fourth is the vote winning.
 
-    serial 8     crop says 95-6-6/1      label "95-6-6/1"   vote "1-1-1"
-    serial 21    crop says 90-7-7/5      label "90-7-7/5"   vote "1-1-5"
-    serial 159   crop says 90-3-3/4   label "11-2-26/8B"  vote "90-3-3/4"
+    serial 8     crop says 90-5-5/5      label "90-5-5/5"   vote "1-1-1"
+    serial 21    crop says 90-23-23/5      label "90-23-23/5"   vote "1-1-5"
+    serial 159   crop says 90-31-31/4   label "11-2-26/8B"  vote "90-31-31/4"
 
     serial 458   the crop spans TWO printed lines:
                 "SATYANARAYANA Kapa"
-                ": 94-3-3/3"
-                Neither reader produced the value. The true value is 94-3-3/3.
+                ": 90-46-6/1"
+                Neither reader produced the value. The true value is 90-46-6/1.
                 This one is a separate defect, not evidence about either reader.
 
 ## The rest, for completeness

@@ -98,13 +98,7 @@ class Store(private val context: Context, private val root: File? = null) {
     suspend fun saveLists(lists: Lists): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             writeAtomically(listsFile) { out ->
-                out.write(
-                    JSONObject().apply {
-                        put("castes", JSONArray(lists.castes))
-                        put("addresses", JSONArray(lists.addresses))
-                        put("parties", JSONArray(lists.parties))
-                    }.toString().toByteArray(Charsets.UTF_8)
-                )
+                out.write(listsJson(lists).toByteArray(Charsets.UTF_8))
             }
         }.onFailure { Log.e(TAG, "could not save the shared lists: ${it.message}", it) }
             .isSuccess
@@ -351,19 +345,11 @@ class Store(private val context: Context, private val root: File? = null) {
 
     fun boothFromJson(text: String): Booth? = boothFromJsonOf(text)
 
-    private fun parseLists(o: JSONObject): Lists {
-        // optString, not getString: a non-string element used to throw here, and losing the
-        // shared caste and party lists is better than refusing to start over one bad value.
-        fun arr(key: String, fallback: List<String>): List<String> =
-            o.optJSONArray(key)?.let { a ->
-                (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
-            } ?: fallback
-        return Lists(
-            castes = arr("castes", Lists.DEFAULT_CASTES),
-            addresses = arr("addresses", emptyList()),
-            parties = arr("parties", emptyList()),
-        )
-    }
+    // parseLists is a file-level function now, shared with the backup reader, so a saved
+    // lists file and a restored backup cannot drift into reading the same key differently.
+    // It also takes over the retired-default removal, which has to happen on load rather
+    // than on save: a phone that has not been written to since the change would keep
+    // offering BC-A through BC-D forever.
 
     /**
      * Reads a JSON file, moving it aside if it will not parse.
@@ -450,31 +436,78 @@ internal fun backupJsonOf(booth: Booth, lists: Lists): String = JSONObject().app
     put("version", FILE_VERSION)
     put("savedAt", System.currentTimeMillis())
     put("booth", JSONObject(boothJsonOf(booth)))
-    put("lists", JSONObject().apply {
-        put("castes", JSONArray(lists.castes))
-        put("subCastes", JSONArray(lists.subCastes))
-        put("addresses", JSONArray(lists.addresses))
-        put("parties", JSONArray(lists.parties))
-    })
+    put("lists", JSONObject(listsJson(lists)))
 }.toString()
+
+/** The shared vocabularies as one JSON object, for both the lists file and a backup. */
+private fun listsJson(lists: Lists): String = JSONObject().apply {
+    put("castes", JSONArray(lists.castes))
+    // An object keyed by caste, not the flat array this used to be.
+    put("subCasteGroups", JSONObject().apply {
+        for ((caste, names) in lists.subCastes) put(caste, JSONArray(names))
+    })
+    put("addresses", JSONArray(lists.addresses))
+    put("parties", JSONArray(lists.parties))
+}.toString()
+
+/**
+ * The shared vocabularies out of a stored lists object, in either shape.
+ *
+ * **Reads both.** `subCastes` as a JSON object of caste to names is the current form; as a
+ * flat JSON array it is what every file written before this change contains, and those
+ * values have no caste attached. They go to [SubCaste.UNPARENTED] rather than being
+ * dropped, so a phone that has been used for a fortnight does not quietly lose the words
+ * its surveyor typed at a hundred doorsteps.
+ *
+ * The old default castes are removed on the way through. They were suggestions the app
+ * shipped with, not anything he chose, and leaving BC-A through BC-D sitting in the list
+ * would defeat the point of asking for three. Anything that is not one of the seven we
+ * shipped is his, and is kept.
+ */
+private fun parseLists(o: JSONObject): Lists {
+    fun arr(key: String): List<String> =
+        o.optJSONArray(key)?.let { a ->
+            (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
+        }.orEmpty()
+
+    val castes = (arr("castes") - RETIRED_CASTES).ifEmpty { Lists.DEFAULT_CASTES }
+
+    val subCastes = o.optJSONObject("subCasteGroups")?.let { groups ->
+        groups.keys().asSequence().associateWith { caste ->
+            val a = groups.optJSONArray(caste)
+            if (a == null) emptyList()
+            else (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
+        }
+    } ?: o.optJSONArray("subCastes")
+        ?.let { a ->
+            (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
+        }?.let { flat -> if (flat.isEmpty()) emptyMap() else mapOf(SubCaste.UNPARENTED to flat) }
+        ?: emptyMap()
+
+    return Lists(
+        castes = castes,
+        subCastes = subCastes,
+        // An absent or empty list gets the built-in one. Which is what makes the first
+        // dropdown of the first morning useful: without this, a phone with no lists file
+        // yet -- every fresh install -- offered an empty party and an empty address list
+        // and expected a dozen doorsteps of typing before it was worth anything.
+        // Anything already stored wins, so a value he has since removed stays removed.
+        addresses = arr("addresses").ifEmpty { Lists.DEFAULT_ADDRESSES },
+        parties = arr("parties").ifEmpty { Lists.DEFAULT_PARTIES },
+    )
+}
+
+/** Caste groups that were built in and are no longer offered. Never his typing. */
+private val RETIRED_CASTES = listOf("BC-A", "BC-B", "BC-C", "BC-D", "SC", "ST")
 
 internal fun readBackupOf(text: String): Backup? = runCatching {
     val o = JSONObject(text)
     if (o.optString("kind") != "booth-survey-backup") return null
     val booth = boothFromJsonOf(o.optString("booth")) ?: return null
     val l = o.optJSONObject("lists") ?: JSONObject()
-    fun arr(k: String): List<String> {
-        val a = l.optJSONArray(k) ?: return emptyList()
-        return (0 until a.length()).mapNotNull { a.optString(it).takeIf(String::isNotBlank) }
-    }
     Backup(
         booth = booth,
-        lists = Lists(
-            castes = arr("castes").ifEmpty { Lists.DEFAULT_CASTES },
-            subCastes = arr("subCastes"),
-            addresses = arr("addresses"),
-            parties = arr("parties"),
-        ),
+        lists = parseLists(l),
         savedAt = o.optLong("savedAt"),
     )
 }.getOrNull()

@@ -4,7 +4,7 @@
 //
 //   1. The locator finds the house line by its printed label, on real English cards.
 //   2. The rectangle it returns starts at the value, not at the label. Getting this wrong
-//      does not fail loudly -- it prepends the label's letters to every value, so "96-3-3/5"
+//      does not fail loudly -- it prepends the label's letters to every value, so "90-2-2/2"
 //      comes back as "HN96-3-3/5" and the field still looks plausible.
 //
 // It runs against the real module rather than a reconstruction of it. A copy of the

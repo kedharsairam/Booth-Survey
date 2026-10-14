@@ -15,19 +15,19 @@
 //   NN-NN              2        NN-NNN-N               1
 //   NN-N-NN-A or /A     4
 //
-// plus eight values carrying trailing text on the same printed line -- "94-5-5/1, 4TH
-// WARD", "98-5-5/5 NEAR TYAGARAJA BHAVAN" -- which is not a misread but a longer value
+// plus eight values carrying trailing text on the same printed line -- "90-38-38/2, 4TH
+// WARD", "90-43-3/7 NEAR TYAGARAJA BHAVAN" -- which is not a misread but a longer value
 // than the pattern alone accounts for.
 //
 // Two things are therefore checked. The shape, against the grammar above. And the leading
 // group, which is 11 for 73 of 82 values and 10 for 7, so a leading group of a single
 // digit is far more likely a dropped digit than a real address: "1-1-6" reads as though
 // its first "1" were lost. That inference is reported as a warning, never applied as a
-// repair, because "91-7-7/1" and "1-1-6" are different houses.
+// repair, because "90-24-24/6" and "1-1-6" are different houses.
 
 // The house number is matched as an anchored prefix rather than as a whole-string
 // pattern, because the roll sometimes prints a landmark on the same line --
-// "98-5-5/5 NEAR TYAGARAJA BHAVAN", "94-5-5/1, 4TH WARD" -- and a whole-string pattern has
+// "90-43-3/7 NEAR TYAGARAJA BHAVAN", "90-38-38/2, 4TH WARD" -- and a whole-string pattern has
 // to choose between rejecting those and being loose enough to accept anything.
 //
 // Anchoring on the numeric core and treating the remainder as trailing text handles both
@@ -47,7 +47,7 @@ const CORE = /^(\d{2})-(\d{1,3})-(\d{1,3})/;
 // may be followed by landmark text, so it is matched from the core outward. A bare
 // trailing letter ("93-4-4/1A") has no separator at all, which means it cannot be
 // distinguished from the first letter of a landmark word -- matching it anywhere but at
-// the very end of the value turns "98-5-5/5 NEAR TYAGARAJA BHAVAN" into the number
+// the very end of the value turns "90-43-3/7 NEAR TYAGARAJA BHAVAN" into the number
 // "98-5-5/5N" with trailing text "EAR TYAGARAJA BHAVAN". So a bare letter is only a
 // suffix when it is the entire remainder.
 const SUFFIX_SEPARATED = /^\s*[/-]\s*(\d{1,2}|[A-Z])/;
@@ -91,7 +91,7 @@ function validateHouse(value) {
 
   // The suffix, and how much text it consumed. The consumed text is kept verbatim so the
   // separator survives: reconstructing the number by appending a bare suffix would turn
-  // "96-3-3/5" into "10-1-31", a different house.
+  // "90-2-2/2" into "10-1-31", a different house.
   let suffix = null;
   let consumed = 0;
   const sep = SUFFIX_SEPARATED.exec(rest);
@@ -157,7 +157,7 @@ const BORDER = 24;    // white margin added after the resize, in output pixels
 // exactly one line standing out as the house number.
 const LOCATE_OPTS = { tessedit_char_whitelist: '0123456789-/', tessedit_pageseg_mode: '6' };
 
-// Stage 2: the real read. Letters matter here ("93-4-4/1A", "96-2-2/1"), and
+// Stage 2: the real read. Letters matter here ("93-4-4/1A", "90-10-10/1"), and
 // PSM 8 is the mode that reads a short token of digits correctly -- measured
 // 30/30 exact on the serial field against 21/30 for PSM 7.
 const LOOK = { tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-/. ', tessedit_pageseg_mode: '8' };
@@ -232,7 +232,7 @@ function columnRect(card) {
 // the inverse transform is subtract the border, divide by the resize factor,
 // then add the crop's origin. Skipping either step lands the re-crop on the
 // wrong line entirely, which is what produced a stage 2 full of "TTT" while
-// stage 1 read "91-7-7/1" correctly.
+// stage 1 read "90-24-24/6" correctly.
 //
 // The horizontal edge looks redundant -- the value always begins at the same
 // place, dx 512, because the label to its left is fixed text -- and using that
@@ -255,7 +255,7 @@ function lineRect(card, col, bbox, scale = SCALE, border = BORDER) {
 }
 
 // True when a stage-1 line carries the house number's shape: a digit, a
-// separator, another digit. Loose enough for "17 3 1/1" and "95-3-3/4", tight
+// separator, another digit. Loose enough for "17 3 1/1" and "90-53-13/8", tight
 // enough that the age line -- a bare number -- does not match.
 function looksLikeHouse(s) {
   return /[0-9]\s*[-/]\s*[0-9]/.test(s);

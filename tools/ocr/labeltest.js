@@ -15,7 +15,7 @@
 //   cardread's own output on the English roll:
 //       "Name : VIJAYALAKSHMI KAVURU"
 //       "Husbands Name: RAMAKRISHANA"
-//       "House Number : 96-4-4/4"
+//       "House Number : 90-14-14/5"
 //       "Age : 53 Gender : Female"
 //
 //   and labelscan.js over 86 cards, which reads the label-only crop where the final letter
@@ -90,8 +90,8 @@ for (const t of RELATION_SPELLINGS) {
   console.log(`    ${JSON.stringify(t).padEnd(20)} -> ${String(got).padEnd(8)}${ok ? '' : '  REACHED name'}`);
 }
 
-  // The house value's own printed prefix. Serial 1123 reads "House Number : D.No 91-6-6/2",
-  // and leaving that on produced "DNO-96-6-6/2" and "DOOR NUMBER 11" in the house field --
+  // The house value's own printed prefix. Serial 1123 reads "House Number : D.No 90-51-11/6",
+  // and leaving that on produced "DNO-90-18-18/9" and "DOOR NUMBER 11" in the house field --
   // which is not untidy but wrong, because the booklet groups households by this value, so a
   // prefixed and an unprefixed spelling of one door become two households.
   //
@@ -99,25 +99,25 @@ for (const t of RELATION_SPELLINGS) {
   // that starts with digits, must come back untouched.
   console.log('\n  the house value\'s printed prefix:');
   const PREFIX_CASES = [
-    ['D.No 91-6-6/2', '91-6-6/2'],
-    ['D No 91-6-6/2', '91-6-6/2'],
-    ['D.No. 91-6-6/2', '91-6-6/2'],
-    ['Door No 91-6-6/2', '91-6-6/2'],
-    ['Door No. 91-6-6/2', '91-6-6/2'],
-    ['Door Number 91-6-6/2', '91-6-6/2'],
-    ['D.No: 91-6-6/2', '91-6-6/2'],
-    ['DNO-96-6-6/2', '96-6-6/2'],
+    ['D.No 90-51-11/6', '90-51-11/6'],
+    ['D No 90-51-11/6', '90-51-11/6'],
+    ['D.No. 90-51-11/6', '90-51-11/6'],
+    ['Door No 90-51-11/6', '90-51-11/6'],
+    ['Door No. 90-51-11/6', '90-51-11/6'],
+    ['Door Number 90-51-11/6', '90-51-11/6'],
+    ['D.No: 90-51-11/6', '90-51-11/6'],
+    ['DNO-90-18-18/9', '90-18-18/9'],
     // These are the forms the recogniser actually produced on this roll, with the spaces
     // dropped. Six cards were left with their prefix attached before these were added,
     // because "o" and "1" have no word boundary between them.
-    ['DNO93-5-5/5', '93-5-5/5'],
-    ['D.No91-6-6/2', '91-6-6/2'],
-    ['DOORNO92-5-5/4,', '92-5-5/4,'],
-    ['DOORNUMBER93-5-5/5', '93-5-5/5'],
-    ['DOORNUMBER92-6-6/3', '92-6-6/3'],
-    ['D.No91-6-6/2', '91-6-6/2'],
-    ['91-6-6/2', '91-6-6/2'],
-    ['96-3-3/5', '96-3-3/5'],
+    ['DNO93-5-5/5', '90-35-35/8'],
+    ['D.No90-1-1/1', '90-51-11/6'],
+    ['DOORNO92-5-5/4,', '90-34-34/7,'],
+    ['DOORNUMBER93-5-5/5', '90-35-35/8'],
+    ['DOORNUMBER92-6-6/3', '90-52-12/7'],
+    ['D.No90-1-1/1', '90-51-11/6'],
+    ['90-51-11/6', '90-51-11/6'],
+    ['90-2-2/2', '90-2-2/2'],
     ['96-6-6/26/north', '96-6-6/26/north'],
   ];
   for (const [text, want] of PREFIX_CASES) {

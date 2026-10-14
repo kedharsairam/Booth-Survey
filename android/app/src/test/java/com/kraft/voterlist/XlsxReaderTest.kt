@@ -85,8 +85,8 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("serial", "voter id", "name", "house number"),
-                    listOf("1", "ZZZ9818485", "HEMA SRI", "96-3-3/5"),
-                    listOf("2", "ZZZ4395497", "SAI LAVANYA", "94-2-2/4"),
+                    listOf("1", "ZZZ9818485", "HEMA SRI", "90-2-2/2"),
+                    listOf("2", "ZZZ4395497", "SAI LAVANYA", "90-3-3/3"),
                 )
             )
         )
@@ -95,7 +95,7 @@ class XlsxReaderTest {
         assertEquals(1, r.rows[0].serial)
         assertEquals("ZZZ9818485", r.rows[0].voterId)
         assertEquals("HEMA SRI", r.rows[0].name)
-        assertEquals("96-3-3/5", r.rows[0].house)
+        assertEquals("90-2-2/2", r.rows[0].house)
         assertEquals("SAI LAVANYA", r.rows[1].name)
     }
 
@@ -108,7 +108,7 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("name", "serial", "voter_id", "remarks", "house_no"),
-                    listOf("HEMA SRI", "7", "ZZZ9818485", "x", "96-3-3/5"),
+                    listOf("HEMA SRI", "7", "ZZZ9818485", "x", "90-2-2/2"),
                 )
             )
         )
@@ -117,7 +117,7 @@ class XlsxReaderTest {
         assertEquals(7, r.rows[0].serial)
         assertEquals("ZZZ9818485", r.rows[0].voterId)
         assertEquals("HEMA SRI", r.rows[0].name)
-        assertEquals("96-3-3/5", r.rows[0].house)
+        assertEquals("90-2-2/2", r.rows[0].house)
     }
 
     @Test
@@ -147,7 +147,7 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("Sl No", "House No", "Voter Name", "EPIC No"),
-                    listOf("1", "96-3-3/5", "ఓటరు", "WQQ0000001"),
+                    listOf("1", "90-2-2/2", "ఓటరు", "WQQ0000001"),
                 )
             )
         )
@@ -156,7 +156,7 @@ class XlsxReaderTest {
         assertEquals(1, r.rows[0].serial)
         assertEquals("WQQ0000001", r.rows[0].voterId)
         assertEquals("ఓటరు", r.rows[0].name)
-        assertEquals("96-3-3/5", r.rows[0].house)
+        assertEquals("90-2-2/2", r.rows[0].house)
     }
 
     @Test
@@ -183,7 +183,7 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("serial", "voter id", "name", "house number"),
-                    listOf("1", "ZZZ9818485", "HEMA SRI", "96-3-3/5"),
+                    listOf("1", "ZZZ9818485", "HEMA SRI", "90-2-2/2"),
                 ),
                 useSharedStrings = false,
             )
@@ -200,7 +200,7 @@ class XlsxReaderTest {
             sheet(
                 listOf(
                     listOf("serial", "voter id", "name", "house number"),
-                    listOf("1", "ZZZ9818485", "HEMA SRI", "96-3-3/5"),
+                    listOf("1", "ZZZ9818485", "HEMA SRI", "90-2-2/2"),
                 ),
                 sheetFile = "xl/worksheets/sheet2.xml",
             )
@@ -223,7 +223,7 @@ class XlsxReaderTest {
             "<c r=\"A2\"><v>42</v></c>" +
             "<c r=\"B2\" t=\"inlineStr\"><is><t>ZZZ9818485</t></is></c>" +
             "<c r=\"C2\" t=\"inlineStr\"><is><t>HEMA SRI</t></is></c>" +
-            "<c r=\"D2\" t=\"inlineStr\"><is><t>96-3-3/5</t></is></c>" +
+            "<c r=\"D2\" t=\"inlineStr\"><is><t>90-2-2/2</t></is></c>" +
             "</row></sheetData></worksheet>"
         val bytes = zip(
             "xl/workbook.xml" to "<?xml version=\"1.0\"?><workbook><sheets><sheet name=\"Voters\" " +

@@ -9,11 +9,11 @@
 // Two crops taken from English page 3, both of which the label locator read correctly, so
 // the crop is known to contain the ink it is supposed to contain.
 const CASES = [
-  // card 7, serial 8: "95-6-6/1" -- two adjacent 1s at the front.
+  // card 7, serial 8: "90-5-5/5" -- two adjacent 1s at the front.
   {
-    name: '95-6-6/1 (two adjacent 1s)',
+    name: '90-5-5/5 (two adjacent 1s)',
     rect: { x0: 856, y0: 732, w: 276, h: 23 },
-    truth: '95-6-6/1',
+    truth: '90-5-5/5',
     result: {
       'psm6': { right: 8, of: 27, wrong: { '1-1-1': 18, '11-11': 1 } },
       'psm7': { right: 8, of: 27, wrong: { '1-1-1': 18, '11-11': 1 } },
@@ -25,7 +25,7 @@ const CASES = [
 
 // What the measurement says, in one place.
 //
-// 1. No majority of configurations gets the first case right. 26 of 108 read "95-6-6/1";
+// 1. No majority of configurations gets the first case right. 26 of 108 read "90-5-5/5";
 //    66 read "1-1-1". The two leading 1s sit close enough together that the pair is read
 //    as one glyph, and the error is present in nearly every configuration -- so it is not
 //    noise that a vote averages out, it is a bias the vote faithfully reproduces. This is

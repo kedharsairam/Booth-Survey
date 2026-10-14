@@ -114,13 +114,13 @@ class BloSheetTest {
     @Test
     fun `the four fields come off the right columns`() {
         val xlsx = bloSheet(listOf(
-            Triple(7, "TST000010", "96-3-3/5"),
-            Triple(9, "TST000011", "94-2-2/4"),
+            Triple(7, "TEST0001", "90-2-2/2"),
+            Triple(9, "TEST0002", "90-3-3/3"),
         ))
         val r = XlsxReader.read(xlsx.inputStream())
 
-        assertEquals(listOf("TST000010", "TST000011"), r.rows.map { it.voterId })
-        assertEquals(listOf("96-3-3/5", "94-2-2/4"), r.rows.map { it.house })
+        assertEquals(listOf("TEST0001", "TEST0002"), r.rows.map { it.voterId })
+        assertEquals(listOf("90-2-2/2", "90-3-3/3"), r.rows.map { it.house })
         assertEquals(listOf("PERSON 7", "PERSON 9"), r.rows.map { it.name })
     }
 

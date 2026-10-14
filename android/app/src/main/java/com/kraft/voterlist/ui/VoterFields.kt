@@ -169,6 +169,11 @@ fun RowField(
  * The chevron sits beside the value rather than as a trailing icon inside it, because the
  * field is now borderless and a trailing icon would sit in the middle of the row with
  * nothing to belong to.
+ *
+ * [needsCasteFirst] gates the dropdown on the field above it. The sub caste list belongs to
+ * a caste, so with no caste chosen there is no list that could be right; the chevron then
+ * says why instead of opening onto something misleading. Typing still works either way --
+ * a surveyor who knows better than a shut dropdown is not going to be stopped by one.
  */
 @Composable
 fun ListRow(
@@ -180,6 +185,7 @@ fun ListRow(
     options: List<String>,
     imeAction: ImeAction = ImeAction.Next,
     scroller: FieldScroller? = null,
+    needsCasteFirst: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
     Column(
@@ -208,29 +214,34 @@ fun ListRow(
                 textStyle = MaterialTheme.typography.bodyLarge,
             )
           }
-            IconButton(onClick = { open = true }) {
+            // A shut dropdown, with the reason in words rather than a control that does nothing.
+            // Stays a live 48dp target either way: tapping it and being told why is better
+            // than a chevron that is there and gives no answer.
+            IconButton(onClick = { open = !open }) {
                 Icon(
                     Icons.Default.ArrowDropDown,
-                    "Choose $label",
-                    tint = MaterialTheme.colorScheme.primary,
+                    if (needsCasteFirst) "Choose a caste first" else "Choose $label",
+                    tint = if (needsCasteFirst) MaterialTheme.colorScheme.outline
+                    else MaterialTheme.colorScheme.primary,
                 )
             }
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            if (options.isEmpty()) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            "Nothing on this list yet",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    },
-                    onClick = { open = false },
-                )
+        AppDropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            title = label,
+        ) {
+            if (needsCasteFirst) {
+                DropdownNote("Choose a caste above first")
+            }
+            if (options.isEmpty() && !needsCasteFirst) {
+                DropdownNote("Nothing on this list yet")
             }
             options.forEach { o ->
-                DropdownMenuItem(
-                    text = { Text(o, style = MaterialTheme.typography.bodyLarge) },
+                DropdownChoice(
+                    label = o,
+                    selected = o == value,
+                    enabled = !needsCasteFirst,
                     onClick = {
                         vm.setField(field, o)
                         vm.learnValue(kind, o)

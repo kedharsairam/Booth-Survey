@@ -25,8 +25,8 @@ import zipfile
 from read_xlsx import sheets
 
 # The roll prints the door number under more than one label. Measured across the English
-# roll: "House Number : 98-3-3/2" on most cards and "DOOR NO. 92-5-5/4" or
-# "DOOR NUMBER 93-5-5/5" on a handful -- 7 cards. The first version of the extractor only
+# roll: "House Number : 90-21-21/3" on most cards and "DOOR NO. 90-34-34/7" or
+# "DOOR NUMBER 90-35-35/8" on a handful -- 7 cards. The first version of the extractor only
 # knew the first form and left the label text attached to the number.
 LABEL = re.compile(r'^\s*(?:house\s*number|door\s*(?:no\.?|number))\s*[:.\-]?\s*', re.I)
 

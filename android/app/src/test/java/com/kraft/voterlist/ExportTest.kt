@@ -44,9 +44,9 @@ class ExportTest {
             listOf(
                 voter(5, "10-1-5"),
                 voter(2, "10-1-12"),
-                voter(4, "93-2-2/3"),
-                voter(1, "95-6-6/1"),
-                voter(3, "96-3-3/5"),
+                voter(4, "90-4-4/4"),
+                voter(1, "90-5-5/5"),
+                voter(3, "90-2-2/2"),
             )
         ).map { it.members.first().serial }
         assertEquals(listOf(1, 2, 3, 4, 5), order)
@@ -153,18 +153,18 @@ class ExportTest {
 
     @Test
     fun `spreadsheet stores door numbers and voter ids as text`() {
-        // A CSV cannot achieve this. A spreadsheet is entitled to read "98-3-3/2" as a date and
+        // A CSV cannot achieve this. A spreadsheet is entitled to read "90-21-21/3" as a date and
         // does; storing the cell as a text type in the file removes the guesswork.
         val b = booth(
             listOf(
-                Voter(id = "a", serial = 1, name = "A", house = "93-4-4/1", voterId = "ZZZ9818485"),
+                Voter(id = "a", serial = 1, name = "A", house = "90-9-9/9", voterId = "ZZZ9818485"),
                 Voter(id = "b", serial = 2, name = "B", house = "10-1-5", voterId = "ABC1234567"),
             )
         )
         val bytes = java.io.ByteArrayOutputStream()
             .also { out -> XlsxExporter.write(out, b, Lists()) }.toByteArray()
         val sheet = zipPart(bytes, "xl/worksheets/sheet1.xml")
-        for (value in listOf("93-4-4/1", "10-1-5", "ZZZ9818485", "ABC1234567")) {
+        for (value in listOf("90-9-9/9", "10-1-5", "ZZZ9818485", "ABC1234567")) {
             assertTrue(
                 "$value is not stored as an inline string",
                 sheet.contains(Regex("<c r=\"[A-Z]+\\d+\" t=\"inlineStr\"><is><t[^>]*>" + Regex.escape(value) + "</t>")),

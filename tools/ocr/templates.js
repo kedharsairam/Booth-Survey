@@ -4,8 +4,8 @@
 // Why this exists. Tesseract reads the serial field 30/30 and the voter id
 // 29/30, but only 25/30 on the house number -- and the house number is the field
 // the booklet is built on, since it decides who counts as one family. Its
-// failures are shape confusions on clean, legible glyphs: "91-7-7/1" read as
-// "1-1-6", "95-4-4/3" as "17-1-15", "96-4-4/4" as "95-6-6/14". Reading the whole
+// failures are shape confusions on clean, legible glyphs: "90-24-24/6" read as
+// "1-1-6", "90-13-13/4" as "17-1-15", "90-14-14/5" as "95-6-6/14". Reading the whole
 // card with a tighter crop and a different page-segmentation mode did not move
 // it; nine preprocessing variants and a majority vote still left those five.
 //

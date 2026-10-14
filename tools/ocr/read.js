@@ -7,7 +7,7 @@
 // Each field is OCR'd on its own tight crop with a character whitelist, rather
 // than by recognising a whole card. A card is mostly Telugu prose; feeding that
 // to a recogniser configured for Latin digits invites substitutions. A crop of
-// "91-7-7/1" with a digits-and-hyphen whitelist is a far easier problem.
+// "90-24-24/6" with a digits-and-hyphen whitelist is a far easier problem.
 //
 // Cards are processed in parallel across several Tesseract workers. A single
 // worker takes about seven minutes for a 30-card page, which is roughly five hours
@@ -236,9 +236,9 @@ async function readEpic(pagePng, card, worker, tmp, i) {
 // scales) on the roll's own native pixels:
 //
 //     value          psm 6   psm 7   psm 8   psm 13
-//     97-3-3/1         24/27   24/27    7/27     7/27
-//     90-7-7/5           14/27   14/27    9/27     9/27
-//     95-6-6/1            8/27    8/27    5/27     5/27
+//     90-6-6/6         24/27   24/27    7/27     7/27
+//     90-23-23/5           14/27   14/27    9/27     9/27
+//     90-5-5/5            8/27    8/27    5/27     5/27
 //
 // psm 6 and psm 7 -- "assume a single uniform block of text" and "assume a single text
 // line" -- are two to three times better than psm 8's "assume a single word" here, and
@@ -271,7 +271,7 @@ const HOUSE_VARIANTS = [
 // document: the box this used to crop, F.HOUSE_X0..HOUSE_X1 scaled into the card, was
 // measured on the Telugu roll and fitted it. On the English roll the same box was wider
 // than the label it wanted and overlapped the two lines above it, so it returned
-// "mber : 96-3-3/5" with the name and the relation line still in frame. Under the
+// "mber : 90-2-2/2" with the name and the relation line still in frame. Under the
 // digits-only stage-1 whitelist the letters of those two lines are unreadable, so they
 // collapse to noise -- but the recogniser still returns something for a line it has
 // ink for, and the vote then picks a winner out of noise. That is where the leading
@@ -342,7 +342,7 @@ async function locateHouseByLabel(pagePng, card, pageW, px, worker, tmp, i) {
       const got = squash(w.text);
       if (!got || !w.bbox) continue;
       // A word that begins the value is its first word. Prefixes are allowed because the
-      // recogniser sometimes splits the value itself -- "96-3-3/5" as "10" and "1-3/1" --
+      // recogniser sometimes splits the value itself -- "90-2-2/2" as "10" and "1-3/1" --
       // and the first piece is still where the value begins.
       if (want.startsWith(got)) {
         vx = Math.round(toPageX(w.bbox.x0));
@@ -378,8 +378,8 @@ async function locateHouseByLabel(pagePng, card, pageW, px, worker, tmp, i) {
 // were made by an agent and are a second opinion.
 //
 // The vote's three wins are why it is kept rather than deleted: it is better on a substituted
-// or invented digit, where the label line read "95-4-4/36" for "95-4-4/3" and "11-2-26/8B" for
-// "90-3-3/4". The label line is better on the leading digit, which is where the vote loses
+// or invented digit, where the label line read "95-4-4/36" for "90-13-13/4" and "11-2-26/8B" for
+// "90-31-31/4". The label line is better on the leading digit, which is where the vote loses
 // everything -- 81 cards came back with a one-digit leading group against 4 for the label
 // line, because the value's own first two 1s merge into one glyph once the crop is tightened
 // around them and read alone.
@@ -547,8 +547,8 @@ async function main() {
   // measured on page 5 and made the house field *worse*: 25/30 became 17/30.
   // The idea -- one door, one spelling, so trust the majority -- is sound, but
   // consecutive house numbers in this roll are one edit apart by nature, so
-  // "92-4-4/5" and "93-4-4/1" look like a misread of each other. It snapped five
-  // correct "93-4-4/1" cards onto "92-4-4/5" and "93-4-4/1A" onto "93-4-4/1".
+  // "90-7-7/7" and "90-9-9/9" look like a misread of each other. It snapped five
+  // correct "90-9-9/9" cards onto "90-7-7/7" and "93-4-4/1A" onto "90-9-9/9".
   // Reconciling this field safely needs a real notion of which cards share a
   // door, which is exactly what the house number was supposed to supply.
   // See reconcile.js for the attempt and why it was rejected.

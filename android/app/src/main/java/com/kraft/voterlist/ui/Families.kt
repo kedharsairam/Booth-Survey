@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -99,6 +100,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -143,29 +145,24 @@ fun FamilyListScreen(
     // Reordering stays available underneath: ticking and arranging are different
     // jobs and there is no reason to take one away for the other.
     val selecting = s.selectedFamilyIds.isNotEmpty()
+    // The card numbers run 1..n, so the column is set by how many families there are.
+    val familyNumbers = remember(s.families.size) { (1..s.families.size.coerceAtLeast(1)).toList() }
     if (!s.hasBooth) {
         EmptyTab("No voters list yet", "Import one from Settings and the families you make will appear here.")
         return
     }
     if (s.families.isEmpty()) {
-        Column(
-            Modifier.fillMaxSize().padding(Space.lg),
-            verticalArrangement = Arrangement.Center,
+        // EmptyTab, so this sits where every other empty state in the app sits -- at the
+        // top, at the same inset. It was the one centred on this screen, which is what
+        // made the tabs look like they belonged to different apps.
+        EmptyTab(
+            title = "No families yet",
+            body = "A family is a group of people you decide belong together. Nothing in " +
+                "the app guesses it from the door number, because a door number in a roll " +
+                "does not say who lives where.\n\nUse New family when you are at a house: " +
+                "pick the people who live there, put them in the order you want them " +
+                "printed, and the family takes the name of whoever is first.",
         ) {
-            Text(
-                "No families yet",
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Spacer(Modifier.height(Space.md))
-            Text(
-                "A family is a group of people you decide belong together. Nothing in the " +
-                    "app guesses it from the door number, because a door number in a roll " +
-                    "does not say who lives where.\n\nUse New family when you are at a house: " +
-                    "pick the people who live there, put them in the order you want them " +
-                    "printed, and the family takes the name of whoever is first.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Spacer(Modifier.height(Space.xl))
             FilledTonalButton(onClick = { vm.createFamily() }) {
                 Icon(Icons.Default.GroupAdd, null)
@@ -214,7 +211,15 @@ fun FamilyListScreen(
     LazyColumn(
         Modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(bottom = Space.lg + KraftSpacing.Spacing64),
+        // Room for the floating button, which sits over the list rather than in it.
+        //
+        // 80dp was not enough. The button is 56dp tall with a 16dp margin, and the list
+        // kept the last row's *controls* -- the tick box, and on a household the arrows --
+        // under it: measured on the device, the bottom row's checkbox came out 24px wide
+        // against the usual 144px, because the button was sitting on it. The number here
+        // is the button plus its margins plus a hand's width, so the last row can be
+        // scrolled clear and then actually ticked.
+        contentPadding = PaddingValues(bottom = Space.lg + KraftSpacing.Spacing64 + Space.xxl),
     ) {
         itemsIndexed(families, key = { _, fwm -> fwm.family.id }) { index, fwm ->
             val dragging = drag.draggingId == fwm.family.id
@@ -233,6 +238,7 @@ fun FamilyListScreen(
                 listState = listState,
                 drag = drag,
                 onMove = vm::moveFamily,
+                onMoveTo = vm::moveFamilyTo,
                 onOpen = { vm.openFamily(fwm.family.id) },
                 onToggle = { vm.toggleFamilySelect(fwm.family.id) },
             )
@@ -359,10 +365,18 @@ private fun FamilyCard(
     ticked: Boolean,
     listState: LazyListState,
     drag: DragReorder,
+    /** Where the arrows go: one place at a time. */
     onMove: (String, Int) -> Unit,
+
+    /** Where a drag puts it: an absolute slot in the list. */
+    onMoveTo: (String, Int) -> Unit,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
 ) {
+    // The card numbers run 1..total, so the column is set by how many families there are --
+    // which is what stops the number and the name being separated by room reserved for a
+    // serial four digits long, on a card where the number is never more than two.
+    val familyNumbers = remember(total) { (1..total.coerceAtLeast(1)).toList() }
     val density = LocalDensity.current
     // Two lines for the name: one carries most families, the second is there for the long
     // ones, and reserving it is what makes every card the same height.
@@ -377,6 +391,11 @@ private fun FamilyCard(
     val countsLine = MaterialTheme.typography.bodySmall.lineHeight.dpAt(density) +
         Space.xs * 2
     val cardHeight = Space.sm * 2 + nameLine + Space.xs + countsLine
+
+    // The door numbers, for the spoken description below. Not on the card itself any more --
+    // the detail line has to fit "N people, M of N done" beside the arrows without losing an
+    // end to an ellipsis, and the door is one tap away on the family screen. Spoken, it costs
+    // nothing at all, so it stays in what a screen reader says.
     val doors = fwm.members.mapNotNull { it.house.trim().takeIf(String::isNotEmpty) }
 
     // Three signals together, because one alone gets missed on a phone held at arm's
@@ -440,7 +459,11 @@ private fun FamilyCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = Space.lg, vertical = Space.xs)
-            .height(cardHeight)
+            // A floor, not a ceiling. Fixed height clipped the detail line at a large
+            // system font: the text wrapped to a second line and the card cut it off at the
+            // bottom, which is how "0 of 3 done" turned into "0 of ..." anyway. At 1.0x
+            // this is exactly the card's natural height and nothing moves.
+            .heightIn(min = cardHeight)
             .zIndex(if (dragging) 1f else 0f)
             .graphicsLayer {
                 scaleX = lift * pressScale
@@ -471,7 +494,13 @@ private fun FamilyCard(
                 drag.cardHandle(
                     id = fwm.family.id,
                     list = listState,
-                    onStep = { by -> onMove(fwm.family.id, by) },
+                    // The whole list length, so a drop past either end clamps instead of
+                    // being asked for a slot that is not there.
+                    itemCount = total,
+                    // The destination, not a step. This is what makes a ward with two hundred
+                    // families on the screen reorderable at all -- the old drag moved one
+                    // place per row-height of travel, so a card could only crawl.
+                    onMoveTo = { to -> onMoveTo(fwm.family.id, to) },
                     // Not onSelect: the hold arms the drag and must not also tick. Ticking
                     // has its own control on the card now, so there is no reason for one
                     // gesture to mean two things.
@@ -530,115 +559,95 @@ private fun FamilyCard(
         border = BorderStroke(1.dp, outline), // @kraft-lint-ignore spacing.no-raw-dp — a hairline outline; the thickness is the point, and 2dp reads as a border
         shape = MaterialTheme.shapes.medium,
     ) {
-        Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm)) {
-            Row(
-                // nameLine already holds both lines; doubling it again here would ask
-                // for 80dp of header inside an 82dp card and clip the counts line.
-                Modifier.height(nameLine),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // The walking position, big enough to read at arm's length. Display only:
-                // the export carries the member order, never this number.
-                Text(
-                    (index + 1).toString(),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.width(serialColumnWidth()),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(Space.sm))
-                Text(
-                    fwm.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                // The precise path, on the card itself. Dragging is fast but moves a card a
-                // whole row at a time, and holding a phone at a stranger's door one-handed
-                // is not the moment for that; one tap, one place, no precision needed. Two
-                // 48dp slots inside a fixed-height row, so they never change the card's size
-                // -- the clamps keep them the row's height rather than letting them stretch
-                // it, which is what made these cards balloon in the first place.
-                Row(
-                    Modifier.onGloballyPositioned {
-                        val p = it.positionInParent()
-                        arrowBox = Rect(p, p + Offset(it.size.width.toFloat(), it.size.height.toFloat()))
+        // Even on every side. It was Space.md across and Space.sm down, which made the
+        // card look pinched top and bottom and pushed the two text lines toward each other
+        // while the controls sat in a band of their own.
+        Column(Modifier.padding(Space.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TwoLineRow(
+                    number = (index + 1).toString(),
+                    name = fwm.label.ifBlank { "Unnamed family" },
+                    // How many people, and how far through them he is. The door number used
+                    // to sit between them and pushed "0 of 3 visited" off the end of the
+                    // line once the arrows took their share of it -- a card whose detail
+                    // ended in an ellipsis was hiding the one number on it that changes as
+                    // he works. The door is still on the family screen and in search; on a
+                    // card, how many are left is what he is reading for.
+                    detail = buildString {
+                        append(fwm.size)
+                        append(if (fwm.size == 1) " person  " else " people  ")
+                        append(fwm.done)
+                        append(" of ${fwm.size} done")
                     },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(
-                        onClick = { onMove(fwm.family.id, -1) },
-                        enabled = index > 0,
-                        modifier = Modifier.size(BoothMetrics.TouchTarget),
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowUp, "Move ${fwm.label} earlier")
-                    }
-                    IconButton(
-                        onClick = { onMove(fwm.family.id, 1) },
-                        enabled = index < total - 1,
-                        modifier = Modifier.size(BoothMetrics.TouchTarget),
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Move ${fwm.label} later")
-                    }
-                }
+                    numberWidth = numberColumnWidth(familyNumbers),
+                    lineTwoTrailing = {
+                        // Move up / move down, back on the card.
+                        //
+                        // I took these off without being asked, which left hold-and-drag as
+                        // the only way to reorder for anyone who can see the screen. That is
+                        // the wrong trade: dragging a card across a list while holding the
+                        // phone in one hand at somebody's door is a far harder gesture than
+                        // two taps, and it is a gesture with no visible target before it
+                        // starts. Drag stays, because it is the right tool for rearranging
+                        // several families at once; the arrows stay too, because moving one
+                        // family one place is the common case and should not require it.
+                        RowIcon(
+                            Icons.Default.KeyboardArrowUp,
+                            "Move ${fwm.label.ifBlank { "this family" }} earlier",
+                            enabled = index > 0,
+                            onClick = { onMove(fwm.family.id, -1) },
+                        )
+                        RowIcon(
+                            Icons.Default.KeyboardArrowDown,
+                            "Move ${fwm.label.ifBlank { "this family" }} later",
+                            enabled = index < total - 1,
+                            onClick = { onMove(fwm.family.id, 1) },
+                        )
+                    },
+                    trailing = {
+                        // One control, at the far right, on the centre line between the two
+                        // rows -- so the right-hand edge of every card is the same and the
+                        // name never has to work around it.
+                        Box(
+                            modifier = Modifier
+                                .size(BoothMetrics.TouchTarget)
+                                .onGloballyPositioned {
+                                    val p = it.positionInParent()
+                                    arrowBox = Rect(
+                                        p,
+                                        p + Offset(it.size.width.toFloat(), it.size.height.toFloat()),
+                                    )
+                                }
+                                .toggleable(
+                                    value = ticked,
+                                    role = Role.Checkbox,
+                                    onValueChange = { onToggle() },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                if (ticked) Icons.Default.CheckBox
+                                else Icons.Default.CheckBoxOutlineBlank,
+                                null,
+                                tint = if (ticked) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(KraftSpacing.Spacing24),
+                            )
+                        }
+                    },
+                )
             }
-            Spacer(Modifier.height(Space.xs))
-            Row(
-                Modifier.height(countsLine),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    buildString {
-                        append("${fwm.size} ")
-                        append(if (fwm.size == 1) "person" else "people")
-                        if (doors.isNotEmpty()) append("  ${doors.minWith(NATURAL_HOUSE_ORDER)}")
-                        append("  ${fwm.done}/${fwm.size} visited")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (!selecting) {
+            // The chips sit below rather than inside line two: there is not room beside the
+            // numbers for a word like "done" and the checkbox both, and a chip squeezed to
+            // two characters says less than no chip.
+            if (!selecting && (fwm.complete || fwm.size == 0)) {
+                Spacer(Modifier.height(Space.sm))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
+                ) {
                     if (fwm.complete) StatusChip("done", Status.done)
                     if (fwm.size == 0) StatusChip("empty", Status.pending)
-                }
-                // The tick box docks in a slot that is the same size whether it holds a
-                // tick or nothing at all, exactly as on the voters list. A reserved slot
-                // cannot resize the row it sits in, which a checkbox appearing in flow
-                // would. The chips step aside for it while ticking, the way the voters
-                // list's do: the counts line needs the width more than it needs the chip.
-                // Always drawn, always a target.
-                //
-                // It appeared only while selecting, and the only way to start selecting was
-                // to hold a card down -- which, because the hold also armed the drag, ticked
-                // the family AND could reorder it in one gesture. The printed walking order
-                // is the thing this app exists to produce, and that is not something to
-                // change by accident.
-                //
-                // So the circle is always here and the hold no longer ticks. Holding now
-                // only ever drags, which is the one thing a hold should mean.
-                Spacer(Modifier.width(Space.xs))
-                Box(
-                    modifier = Modifier
-                        .size(BoothMetrics.TouchTarget)
-                        .toggleable(
-                            value = ticked,
-                            role = Role.Checkbox,
-                            onValueChange = { onToggle() },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        if (ticked) Icons.Default.CheckBox
-                        else Icons.Default.CheckBoxOutlineBlank,
-                        null,
-                        tint = if (ticked) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(KraftSpacing.Spacing24),
-                    )
                 }
             }
         }
@@ -668,10 +677,13 @@ fun FamilyEditScreen(vm: SurveyViewModel, s: UiState) {
     val position = s.familiesWithMembers.indexOfFirst { it.family.id == id }
     var confirmingDelete by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<Voter?>(null) }
-    // Who the long-press menu is about. Null until a row is held.
+    // Who the actions sheet is about. Null until a row's three-dot button is tapped -- and
+    // until a row is held, because the hold is still the fast way in for anybody who already
+    // knows it. It now means nothing else, which is what makes it reliable.
     var menuFor by remember { mutableStateOf<Voter?>(null) }
     val listState = rememberLazyListState()
-    val drag = rememberDragReorder()
+    // The positions run 1..members.size, so the column is set by the size of the house.
+    val memberPositions = remember(members.size) { (1..members.size.coerceAtLeast(1)).toList() }
     val scope = rememberCoroutineScope()
     // A different family starts at its own top.
     LaunchedEffect(id) {
@@ -760,21 +772,18 @@ fun FamilyEditScreen(vm: SurveyViewModel, s: UiState) {
 
             Spacer(Modifier.height(Space.lg))
             Text("Printed in this order", style = MaterialTheme.typography.titleSmall)
-            // The two ways to change it, said out loud and given its own line. Holding a
-            // row to drag it is not something anyone discovers by accident, and a screen
-            // that expects an unwritten gesture fails quietly at a doorstep. Beside the
-            // heading there is not room for both: it truncated one and butted them together.
+            // How to change it, said out loud and given its own line. An unwritten gesture
+            // fails quietly at a doorstep.
+            //
+            // It used to say "Hold for actions", because holding was the only way to reach
+            // them -- including the one action on this screen that undoes work. Each row now
+            // has a three-dot button for that. It then also said a row could be *held and
+            // dragged* to reorder it, which was doing two jobs at once: the same hold meant
+            // "show me the menu" or "pick this up", and a family has four people in it, so
+            // the drag could never have been the faster of the two. The arrows stay; the
+            // drag inside a family is gone, and the long-press gesture with it.
             Text(
-                // Short enough to sit on one line: the longer phrasing wrapped to two and
-                // pushed the list down the screen for a sentence that only has to name the
-                // controls.
-                //
-                // It used to say "Hold for actions", because holding was the only way to
-                // reach them -- including the one action on this screen that undoes work.
-                // Each row now has a three-dot button for that, and telling a 60-year-old
-                // to hold a row still to find it is asking for the thing that made the
-                // gesture unreliable in the first place.
-                "⋯ for actions  ·  arrows to move",
+                "⋯ for actions  ·  ↑ ↓ to move",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -782,21 +791,17 @@ fun FamilyEditScreen(vm: SurveyViewModel, s: UiState) {
 
             LazyColumn(Modifier.weight(1f), state = listState) {
                 items(members, key = { it.id }) { m ->
-                    Column(Modifier.animateItem().fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth()) {
                         MemberRow(
                             m = m,
                             position = members.indexOf(m) + 1,
                             total = members.size,
                             first = m.id == members.firstOrNull()?.id,
                             last = m.id == members.lastOrNull()?.id,
-                            dragging = drag.draggingId == m.id,
-                            pressed = drag.pressedId == m.id,
-                            track = drag.trackHeight(m.id),
-                            listState = listState,
-                            drag = drag,
                             onHold = { menuFor = m },
                             onStep = { by -> vm.moveMember(id, m.id, by) },
                             onOpen = { vm.openVoter(m.id) },
+                            positionNumbers = memberPositions,
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
@@ -922,6 +927,168 @@ fun FamilyEditScreen(vm: SurveyViewModel, s: UiState) {
     }
 }
 
+/**
+ * The card's two lines and its one control, laid out the same way on both family screens.
+ *
+ * **Line one is the number and the name.** That is the pair a surveyor reads -- which
+ * household, and how far down the list they are walking. **Line two is everything else**:
+ * how many people, which door, how many visited. **The control is at the far right**, clear
+ * of the text on both lines, so nothing is ever competing for the name's width and the
+ * right-hand edge is the same line on every row.
+ *
+ * The spacing is even on all four sides rather than tight. It used to be Space.md across and
+ * Space.sm down, with the controls sitting inside the first line so the text had to work
+ * around them -- which is why the number and the name ended up separated by whatever was
+ * left over, and why that gap grew as the numbers got longer.
+ *
+ * The number column is sized to the widest number actually on screen, so "1 2 3" sits close
+ * to its name and "1218 1219 1220" does not leave a hole.
+ */
+@Composable
+private fun TwoLineRow(
+    number: String,
+    name: String,
+    detail: String,
+    numberWidth: Dp,
+    emphasised: Boolean = false,
+    /** Controls at the end of the detail line, sharing it rather than taking a line. */
+    lineTwoTrailing: (@Composable () -> Unit)? = null,
+    trailing: @Composable () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    number,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(numberWidth),
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(Space.md))
+                Text(
+                    name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (emphasised) FontWeight.Bold else FontWeight.Normal,
+                    // Two lines. The card already budgets two -- nameLine above is
+                    // titleSmall.lineHeight * 2 -- and the Text was still capped at one, so
+                    // the space was being held and then thrown away on a Telugu name that
+                    // most cards carry. A household name is what he is looking for at the
+                    // door; "క్రీను శ్రీ సాయి రెడ్డి కొం..." is not that name.
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (detail.isNotBlank()) {
+                Spacer(Modifier.height(Space.xs))
+                // The detail and whatever controls the caller puts beside it share one row.
+                // Detail text is small and short -- "4 people 90-2-2/2 2 of 4 visited" -- so
+                // there is roughly 230dp spare next to it, which is room for two 48dp targets.
+                // Giving the controls a line of their own instead was measurably worse: a
+                // second row of icons with nothing beside it, about 48dp of empty card per
+                // family, on a list of ten.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // Two lines, not one. The arrows beside it are a fixed 96dp while
+                        // this text scales with the system font, so at 1.3x -- a size a
+                        // sixty-year-old with presbyopia is likely to be running -- "3 people
+                        // 0 of 3 done" was cut to "3 people 0 of ...". The count is the one
+                        // number on this card that changes as he works, and it was the part
+                        // that vanished. At 1.0x this still fits on one line and looks
+                        // unchanged; past that it wraps instead of disappearing.
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (lineTwoTrailing != null) {
+                        Spacer(Modifier.width(Space.sm))
+                        lineTwoTrailing()
+                    }
+                }
+            } else if (lineTwoTrailing != null) {
+                Spacer(Modifier.height(Space.xs))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) { lineTwoTrailing() }
+            }
+        }
+        Spacer(Modifier.width(Space.md))
+        trailing()
+    }
+}
+/**
+ * A row's icon control: exactly one 48dp target, no more.
+ *
+ * Material's `IconButton` brings its own minimum-interactive sizing and lays itself out
+ * wider than the `size()` handed to it -- measured at 96dp on a 1.5-density screen, three
+ * of which is 288dp of a 720dp row. That is what was truncating every name on this screen to
+ * two characters, and it cannot be argued with from the call site.
+ *
+ * A Box with the size set outright and the tap on it is the whole of it: the target is
+ * exactly what it says, the icon is centred in it, and the 48dp is guaranteed rather than
+ * hoped for.
+ */
+@Composable
+private fun RowIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(BoothMetrics.TouchTarget)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClickLabel = label,
+                onClick = onClick,
+            )
+            // Named, and not only for a screen reader: three unlabelled chevrons in a row is
+            // three controls that a glance cannot tell apart either.
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            null,
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(KraftSpacing.Spacing24),
+        )
+    }
+}
+
+/**
+ * One person in a household, and the order they print in.
+ *
+ * **No drag here, and that is a decision rather than a gap.** A hold used to mean two
+ * things on this row at once: pick it up to move it, or open its actions. They were told
+ * apart by whether the finger then travelled, which made the menu unreliable exactly when it
+ * mattered -- "take this person out of the house" is the one action on this screen that
+ * undoes work, and it was behind a gesture that a shaky thumb got wrong.
+ *
+ * A household is four people. Moving one past another is a tap of an arrow, and two arrows
+ * are honest: both are visible, both are 48dp, neither has to be discovered. The long-press
+ * now means one thing only, and that thing is the menu. Long-press-to-drag stays where it
+ * earns its keep: the family list, where there are hundreds of cards and one drag has to
+ * carry one across the screen.
+ *
+ * The row itself is a plain list row rather than a card: a name, a detail line, and the
+ * controls. It was drawing a surface, a scale animation on press and a drag outline that
+ * could no longer happen -- three layers of decoration for something that is a line in a
+ * list of four.
+ */
 @Composable
 private fun MemberRow(
     modifier: Modifier = Modifier,
@@ -930,267 +1097,154 @@ private fun MemberRow(
     total: Int,
     first: Boolean,
     last: Boolean,
-    dragging: Boolean,
-    pressed: Boolean,
-    track: Modifier,
-    listState: LazyListState,
-    drag: DragReorder,
     onHold: () -> Unit,
     onStep: (Int) -> Unit,
     onOpen: () -> Unit,
+    /** How many people are in this house, so the position column fits the numbers present. */
+    positionNumbers: List<Int>,
 ) {
-    // The row's arrow buttons and its actions button, measured as they land. Set here and
-    // read by the row's own gesture handler, which has to know that a hold landing on one of
-    // them is not a hold on the row -- a button swallows the tap but not the hold, so without
-    // this one press would both nudge the row a place and open the menu.
-    var arrowBox by remember { mutableStateOf<Rect?>(null) }
-    val onArrow: (Offset) -> Boolean = { p -> arrowBox?.contains(p) == true }
-
     val density = LocalDensity.current
     val nameLine = MaterialTheme.typography.titleSmall.lineHeight.dpAt(density)
     val detailLine = MaterialTheme.typography.bodySmall.lineHeight.dpAt(density)
-    // One name line, not two. Reserving two made every row the height of a two-line name
-    // and left a hole the size of a whole line above the divider on the rows that do not
-    // need it -- which on this screen is most of them, since names are short. Uniform does
-    // not mean padded: a row sized to what it holds is uniform too, and it reads as a row
-    // rather than a card with something missing.
-    // Room for the move arrows, not just for the text. They are 48dp tall; the row was
-    // sized from two lines of text alone, so they were squeezed to about 36 -- under the
-    // platform minimum, on the control a shaky finger most needs to be able to hit.
+    // Sized from what the row holds: one name line and one detail line, never two. Reserving
+    // two made every row the height of a two-line name and left a hole above the rule on the
+    // rows that do not need one, which on this screen is most of them.
+    //
+    // The floor is the buttons' 48dp, not the text's height. The row used to be sized from
+    // the text alone and the arrows were squeezed to about 36 -- under the platform minimum,
+    // on the control a shaky finger most needs to hit.
     val rowHeight = maxOf(Space.sm * 2 + nameLine + detailLine, BoothMetrics.TouchTarget)
 
-    // Whether the three buttons sit beside the name or on a line of their own.
-    //
-    // This row grew a third button -- the one that opens the member's actions, which had
-    // none -- and the name is what the row is for. On a 360dp phone, three 48dp buttons
-    // plus the position number leave the name about 128dp, which truncates a Telugu name
-    // even at the default font and leaves two characters at a 1.5x one. So on a phone the
-    // buttons get their own line and the name takes the width back; a wider screen keeps
-    // them inline, where there is room for both.
+    /**
+     * Where the buttons sit.
+     *
+     * Inline when the screen can afford it, on their own line when it cannot. Three 48dp
+     * targets are 144dp: on a 360dp phone that is two fifths of the width, and a Telugu name
+     * at a readable size does not fit in what is left -- every row came out ellipsised to two
+     * characters, which is worse than a taller row. Below 420dp, or at a large font, they
+     * take a line of their own and the name has the whole width back.
+     *
+     * This was briefly loosened to 340dp on the reasoning that the buttons were oversized.
+     * They were not: Material's IconButton lays itself out wider than the size handed to it,
+     * which is why [RowIcon] exists. With the controls at a true 48dp the width they need is
+     * known, and on a 360dp screen the answer is still a second line.
+     */
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    val stacked = screenWidthDp < 420 || density.fontScale >= 1.3f
+    val stacked = screenWidthDp < 420 || density.fontScale >= 1.5f
 
-    // Same three signals as the family cards, for the same reason: grow, outline, and lift
-    // clear with zIndex -- without that last one the row slides *under* the one it is
-    // passing, which reads as broken rather than plain.
-    // Reduce-motion applies here for the same reason as on the cards: motion is a signal,
-    // not decoration, and a surveyor who has asked for less of it still gets the signal
-    // because the state change itself is not animated away.
-    val reduceMotion = rememberReduceMotion()
-    val lift by animateFloatAsState(
-        targetValue = if (dragging) 1.02f else 1f,
-        animationSpec = if (reduceMotion) {
-            snap()
-        } else {
-            spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMediumLow,
+
+    // Pressing does not scale or tint the row any more: the menu appears under the finger
+    // while it is still down, so the press has already answered itself. An animation on top
+    // of that is a second signal saying the same thing, slightly late.
+    val controls: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RowIcon(
+                Icons.Default.KeyboardArrowUp,
+                "Move ${m.name} earlier",
+                enabled = !first,
+                onClick = { onStep(-1) },
             )
-        },
-        label = "memberLift",
-    )
-    val outline by animateColorAsState(
-        targetValue = if (dragging) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.outline,
-        animationSpec = if (reduceMotion) snap() else tween(220),
-        label = "memberOutline",
-    )
-    // The row settles back a shade on touch-down, so the hold that will become either a
-    // drag or a menu is felt before it is decided.
-    val pressScale by animateFloatAsState(
-        targetValue = when {
-            dragging -> 1f
-            pressed -> 0.985f
-            else -> 1f
-        },
-        animationSpec = if (reduceMotion) {
-            snap()
-        } else {
-            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-        },
-        label = "memberPress",
-    )
+            RowIcon(
+                Icons.Default.KeyboardArrowDown,
+                "Move ${m.name} later",
+                enabled = !last,
+                onClick = { onStep(1) },
+            )
+            // The one action in the app that had no button at all: "take out of this family",
+            // which changes who the printed form says lives at that house. It used to exist
+            // only inside the sheet a long press opened, which is asking for the gesture to
+            // work perfectly, first time, on the one action that cannot be undone by tapping
+            // it again.
+            RowIcon(
+                Icons.Default.MoreVert,
+                "More actions for ${m.name}",
+                enabled = true,
+                onClick = onHold,
+            )
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             // A stacked row carries a second line of buttons and must be free to grow.
             .then(if (stacked) Modifier else Modifier.height(rowHeight))
             .testTag("member-row-${m.id}")
-            .zIndex(if (dragging) 1f else 0f)
-            .graphicsLayer {
-                scaleX = lift * pressScale
-                scaleY = lift * pressScale
-            }
-            .background(MaterialTheme.colorScheme.surface)
-            // The tap lives here, on the row's own node, and not on the name inside it.
-            // Compose delivers pointer events to children before parents, so a clickable
-            // nested inside would fire its tap before the gesture handler below had decided
-            // the press was a hold -- and every hold would open the voter *and* raise the
-            // menu. Same node, same order, as the family cards.
+            // One press, one meaning: open the voter. The hold is the menu, and it is
+            // attached below rather than through the drag gesture, because there is no drag
+            // here for it to be confused with.
             .combinedClickable(
                 role = Role.Button,
-                onClick = {
-                    if (!drag.pressAnswered) onOpen()
-                },
-                onLongClick = null,
-            )
-            // The whole row is the drag surface, exactly as on the family cards: hold it
-            // to pick it up, drag to reorder. The arrows are the precise path and they
-            // measure themselves so a hold on them is left alone.
-            .then(
-                drag.cardHandle(
-                    id = m.id,
-                    list = listState,
-                    onStep = onStep,
-                    // The sheet rises the moment the hold matures -- finger still down,
-                    // which is the whole point of a hold. Waiting for the release made the
-                    // press feel like it had done nothing, then made the menu appear the
-                    // instant the finger came up.
-                    //
-                    // Being up before the finger moves also means it is up before a drag
-                    // could begin, so a member row offers *one* meaning per gesture: hold
-                    // for the sheet, arrows (and the sheet's own move actions) to reorder.
-                    // The family cards, which have nothing to put in a sheet, keep the
-                    // other half of the gesture -- hold then drag to reorder.
-                    onArmed = onHold,
-                    // Already answered by onArmed above; nothing left to do on release.
-                    onSelect = {},
-                    isControl = onArrow,
-                )
-            )
-            .then(drag.pressable(m.id))
-            .then(track),
+                onClick = onOpen,
+                onLongClick = onHold,
+            ),
     ) {
-        // Measured so a hold landing on it is left alone rather than also nudging the
-        // row a place. See onArrow.
-        val buttons: @Composable () -> Unit = {
-            Row(
-                Modifier.onGloballyPositioned {
-                    val p = it.positionInParent()
-                    arrowBox = Rect(
-                        p,
-                        p + Offset(it.size.width.toFloat(), it.size.height.toFloat()),
-                    )
-                },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = { onStep(-1) },
-                    enabled = !first,
-                    modifier = Modifier.size(BoothMetrics.TouchTarget),
-                ) {
-                    Icon(Icons.Default.KeyboardArrowUp, "Move ${m.name} earlier")
-                }
-                IconButton(
-                    onClick = { onStep(1) },
-                    enabled = !last,
-                    modifier = Modifier.size(BoothMetrics.TouchTarget),
-                ) {
-                    Icon(Icons.Default.KeyboardArrowDown, "Move ${m.name} later")
-                }
-            // The one action in the app that had no button at all.
-            //
-            // "Take out of this family" existed only inside the sheet that a long press
-            // opens. The arrows cover move earlier and move later, and opening the voter
-            // covers Open -- so taking somebody out of a household, which changes who
-            // the printed form says lives there, could not be done without holding a row
-            // still enough for half a second to survive as a long press.
-                IconButton(
-                    onClick = onHold,
-                    modifier = Modifier.size(BoothMetrics.TouchTarget),
-                ) {
-                    Icon(Icons.Default.MoreVert, "More actions for ${m.name}")
-                }
-            }
-        }
-
         Row(
             Modifier
                 .fillMaxWidth()
-                // The weight is what makes this row take the leftover height of a
-                // fixed-height column. A stacked row is not fixed-height, so there is no
-                // leftover to take and the weighted row measured zero -- the name and the
-                // serial vanished and only the buttons were left. So it is sized by its
-                // content instead, which is what it needs when it is the whole row.
-                .then(if (stacked) Modifier else Modifier.weight(1f))
-                // Vertical as well as horizontal, and this is the whole of the "no space at
-                // the top" complaint: the row's height budgets Space.sm above and below, but
-                // only the horizontal padding was ever applied, so all of it pooled at the
-                // bottom and the name sat flush against the top edge.
-                .padding(horizontal = Space.md, vertical = Space.sm),
-            // Top, not centre: a name wrapping to two lines then keeps its detail line
-            // level with the row below instead of riding up out of alignment.
-            verticalAlignment = Alignment.Top,
+                .padding(horizontal = Space.lg, vertical = Space.md),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                position.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(serialColumnWidth()),
-            )
-            Spacer(Modifier.width(Space.sm))
-            Column(
-                Modifier
-                    .weight(1f)
-                    // One announcement instead of four. Left separate, a screen reader walks
-                    // "JAYRAM", "109", "91-5-5/3", "bc" as four things and the listener has to
-                    // hold them in their head to work out who this is.
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = buildString {
-                            append(m.name.ifBlank { "No name" })
-                            append(". Serial ${m.serial}")
-                            if (m.house.isNotBlank()) append(". Door ${m.house}")
-                            if (m.caste.isNotBlank()) append(". ${m.caste}")
-                            // The position number beside the name is outside this node, so it
-                            // was never announced. This screen's whole purpose is the order
-                            // things print in, and a screen-reader user could reorder members
-                            // without ever being told where they had put them.
-                            append(". Position $position of $total")
-                            if (first) append(". First in this family, so it is named after them")
-                        }
-                    },
-            ) {
-                Text(
-                    m.name.ifBlank { "(no name)" },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = if (first) FontWeight.Bold else FontWeight.Normal,
-                    // One line, because the row is one line tall now. Telugu surnames and
-                    // long names still get room: the detail line underneath is what a
-                    // long name needs, not a second line of name.
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    buildString {
-                        append("sr ${m.serial}")
-                        if (m.house.isNotBlank()) append("  ${m.house}")
-                        if (m.caste.isNotBlank()) append("  ${m.caste}")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            // Two lines, number and name above, everything else below -- the same shape as
+            // the family cards. The controls sit at the end of the *second* line rather than
+            // in a band of their own.
+            //
+            // They used to be on a line to themselves, which on a 360dp phone put three
+            // 48dp targets across an otherwise empty row: a band of controls under the text
+            // with nothing beside it, and a name squeezed into whatever the controls did not
+            // take. On line two they share the row with the detail text instead -- there is
+            // about 180dp of detail line spare and 144dp of controls, so both fit and the
+            // name above gets the whole width, never truncated.
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        position.toString(),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .width(numberColumnWidth(positionNumbers))
+                            .semantics { contentDescription = "Position $position of $total" },
+                        textAlign = TextAlign.End,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.width(Space.md))
+                    Text(
+                        m.name.ifBlank { "(no name)" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (first) FontWeight.Bold else FontWeight.Normal,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Spacer(Modifier.height(Space.xs))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        buildString {
+                            append("sr ${m.serial}")
+                            if (m.house.isNotBlank()) append("  ${m.house}")
+                            if (m.caste.isNotBlank()) append("  ${m.caste}")
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // Two lines for the same reason as the family card: three fixed
+                        // 48dp controls sit beside this, so at a large system font the
+                        // serial -- the thing being read out at the door -- was the part
+                        // that got cut.
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(Space.sm))
+                    controls()
+                }
             }
-            // Beside the name at the normal size, on a line of its own when the text is
-            // large. Either way the same three controls, the same 48dp, the same actions.
-            if (!stacked) buttons()
         }
-        if (stacked) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) { buttons() }
-        }
-        // The outline is the accent while dragging and invisible otherwise, drawn as a
-        // border rather than a shadow: this screen gets read outdoors too, and a shadow
-        // is the first thing the sun eats.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp) // @kraft-lint-ignore spacing.no-raw-dp — a hairline rule between rows
-                .background(outline.copy(alpha = if (dragging) 1f else 0f)),
-        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -1393,11 +1447,12 @@ fun MemberPicker(
                             Text(
                                 v.serial.toString(),
                                 style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.width(serialColumnWidth()),
+                                modifier = Modifier.width(numberColumnWidth(listOf(v.serial))),
+                                textAlign = TextAlign.End,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Spacer(Modifier.width(Space.sm))
+                            Spacer(Modifier.width(Space.md))
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(

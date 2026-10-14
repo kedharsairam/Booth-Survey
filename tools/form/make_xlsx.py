@@ -3,8 +3,8 @@
 
 Why this exists
 ---------------
-Opening the CSV in a spreadsheet gets the house numbers silently rewritten. "98-3-3/2",
-"94-2-2/4" and "91-3-3/5" are all parseable as dates, and a spreadsheet that type-guesses
+Opening the CSV in a spreadsheet gets the house numbers silently rewritten. "90-21-21/3",
+"90-3-3/3" and "90-32-32/5" are all parseable as dates, and a spreadsheet that type-guesses
 on import turns them into date values -- 11 March 2001, 10 January 2044, and so on. The
 number is then no longer the number that is printed on the card, which is the one number
 in this dataset that must not be altered, because it is what identifies a household.
@@ -179,7 +179,7 @@ def main():
     write_xlsx(dest, sheets)
     print(f'  wrote {dest}')
     print('  house numbers, voter ids, serials and names are stored as text,')
-    print('  so nothing can reinterpret "98-3-3/2" as a date on import.')
+    print('  so nothing can reinterpret "90-21-21/3" as a date on import.')
 
 
 if __name__ == '__main__':

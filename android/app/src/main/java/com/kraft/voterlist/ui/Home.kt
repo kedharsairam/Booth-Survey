@@ -1,5 +1,6 @@
 package com.kraft.voterlist.ui
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -10,6 +11,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,7 +57,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.items
 import com.kraft.voterlist.data.Voter
 import com.kraft.ui.tokens.KraftSpacing
@@ -95,8 +97,10 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
     ) {
         if (!s.hasBooth) {
             // Not its own scroller: a scrollable inside a scrollable throws on gesture
-            // dispatch, and the parent already does this job.
-            NoBoothYet(Modifier.fillMaxSize())
+            // dispatch, and the parent already does this job. No fillMaxSize either --
+            // inside a scrolling parent that hands the child an infinite height, which
+            // is the other half of the same crash.
+            NoBoothYet(Modifier)
             return@Column
         }
         run {
@@ -265,19 +269,19 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
  */
 @Composable
 private fun NoBoothYet(modifier: Modifier) {
-    Column(
-        modifier.fillMaxSize().padding(Space.xl),
-        verticalArrangement = Arrangement.Center,
+    // Top-aligned and scrolled by the screen around it, like every other empty state in
+    // the app now does. This one used to be the genuinely centred one -- it had no scroll
+    // on it, so Arrangement.Center did what it says -- and that is why the same idea sat
+    // high on two tabs and in the middle of another. See EmptyTab for why top wins.
+    EmptyTab(
+        title = "No voters list yet",
+        body = "Import the spreadsheet for the booth you are working on and it will be " +
+            "here. You can keep more than one booth in the app and switch between them " +
+            "from the bar at the top.",
+        modifier = modifier,
+        scrollable = false,   // HomeScreen already scrolls.
+        padding = PaddingValues(horizontal = 0.dp, vertical = Space.lg),       // ...and already pads by Space.lg.
     ) {
-        Text("No voters list yet", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(Space.md))
-        Text(
-            "Import the spreadsheet for the booth you are working on and it will be here. " +
-                "You can keep more than one booth in the app and switch between them from the " +
-                "bar at the top.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         Spacer(Modifier.height(Space.lg))
         Text(
             // It used to end "export the blank template from Settings" -- and there is no
@@ -286,7 +290,7 @@ private fun NoBoothYet(modifier: Modifier) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(Space.xl))
+        Spacer(Modifier.height(Space.lg))
         Text(
             "Nothing is loaded until you import it. The app carries no voter data of its own.",
             style = MaterialTheme.typography.bodySmall,
@@ -516,18 +520,68 @@ internal fun DupBadge() {
     }
 }
 
-/** What a tab shows before anything has been imported. */
+/**
+ * What a screen shows when there is nothing in it.
+ *
+ * **Top-aligned, deliberately, and the same on every screen.** It used to be
+ * `Arrangement.Center`, which did nothing at all here: the modifier chain applies
+ * `verticalScroll` before the arrangement, and inside a scrollable Column the height is
+ * unbounded, so there is nothing to centre within. Meanwhile Home and the Voters list each
+ * built their own, and Home's was genuinely centred because it had no scroll on it. So the
+ * same idea -- an empty app -- sat at 13% of the screen on two tabs and at 48% on the third.
+ *
+ * Centred was the other candidate and it is the worse of the two. A centred block sits at a
+ * different height depending on how long its own text is, so the position would keep moving
+ * as the wording changed, and on Home -- four paragraphs of instructions -- centring pushes
+ * the heading up under the app bar and clips it once he turns his font size up. Top-aligned
+ * matches every other screen in the app, and matches where the eye already is.
+ *
+ * Scrollable, because at 1.5x font this is taller than the space it is given, and an
+ * instruction he cannot scroll to is an instruction he does not get.
+ */
 @Composable
-internal fun EmptyTab(title: String, body: String) {
+internal fun EmptyTab(
+    title: String,
+    body: String = "",
+    modifier: Modifier = Modifier,
+    /**
+     * False when an enclosing screen already scrolls.
+     *
+     * A vertically scrollable Column measured with infinite height is a hard crash
+     * ("Vertically scrollable component was measured with an infinity maximum height
+     * constraints"), and nesting one inside another scroller is how you get it. Both
+     * callers that pass false have a parent already doing this job: HomeScreen scrolls
+     * its own Column, and the voters list draws this as a LazyColumn item.
+     */
+    scrollable: Boolean = true,
+    /**
+     * The block's own inset.
+     *
+     * Horizontal zero where an enclosing screen already pads. HomeScreen pads its scrolling
+     * Column by [Space.lg] and then handed this the same inset again, so its empty state
+     * sat 48px further in than the other two tabs -- visible as a jump when moving between
+     * them, which is the whole thing this refactor is about. Its parent pads horizontally
+     * only, so the vertical half is kept here.
+     */
+    padding: PaddingValues = PaddingValues(Space.lg),
+    footer: (@Composable ColumnScope.() -> Unit)? = null,
+) {
     Column(
-        Modifier
-            .fillMaxSize()
-            .padding(Space.xl)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.Center,
+        modifier
+            .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+            .padding(padding),
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(Space.md))
-        Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Skipped rather than rendered blank: an empty paragraph and its gap read as a
+        // heading with something missing under it.
+        if (body.isNotBlank()) {
+            Spacer(Modifier.height(Space.md))
+            Text(
+                body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        footer?.invoke(this)
     }
 }

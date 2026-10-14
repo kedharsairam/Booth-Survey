@@ -9,8 +9,8 @@
 // That gives a strong constraint the recogniser cannot see on its own: within a
 // page, the same door is read by several cards, and the correct spelling is the
 // one most of them agree on. Observed on page 5, where a one-character OCR slip
-// produced "1-1-7" against five other cards reading "92-7-7/2", and "17-1-15"
-// against three reading "95-4-4/3".
+// produced "1-1-7" against five other cards reading "90-25-25/7", and "17-1-15"
+// against three reading "90-13-13/4".
 //
 // So a read that is one edit away from a better-supported read is snapped to it,
 // and the card is marked reconciled rather than silently altered. A read with no

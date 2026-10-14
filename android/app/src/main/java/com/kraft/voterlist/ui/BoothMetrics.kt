@@ -36,4 +36,31 @@ object BoothMetrics {
 
     /** Home card minimum: keeps its shape while booth data loads. */
     val HomeCardMin = 152.dp
+
+    /**
+     * Dropdown metrics. Component sizes, not spacing, so they live here rather than in the
+     * foundation's token set: the numbers are wrong for any other app, exactly like the field
+     * heights above.
+     */
+    object Dropdown {
+        /** Narrowest a menu is allowed to be, so a two-word choice is never a sliver. */
+        val MinWidth = 200.dp
+
+        /** Cap on the scrolling list. Past this the menu stops being a choice from a field and
+         * becomes a screen, and the field it was opened from disappears behind it. */
+        val MaxListHeight = 300.dp
+
+        /**
+         * One choice's height.
+         *
+         * 56dp, not the 48dp the platform would give. The user is over sixty and reads these
+         * lists off a printed roll in daylight; 48dp is the floor for a target you know where
+         * to put, and this is a target you have to read first, aim at, and confirm.
+         */
+        val ChoiceHeight = 56.dp
+
+        /** The tick's box. Reserved whether or not a tick is showing, so labels never shift
+         * sideways as the eye moves down a list that has one selected value in it. */
+        val TickBox = 24.dp
+    }
 }

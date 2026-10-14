@@ -4,7 +4,7 @@
 //
 // A single read is not a measurement. The crop is small, the scan is soft, and
 // the watermark has dark cores, so one configuration lands on a slightly
-// different answer run to run -- the same card came out "95-4-4/3" at one left
+// different answer run to run -- the same card came out "90-13-13/4" at one left
 // edge and "11-11-18" at another. Reading the same line under several
 // preprocessings and taking the majority is both more accurate and, more
 // usefully, self-reporting: when the reads disagree, that card gets flagged for

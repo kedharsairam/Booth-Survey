@@ -45,10 +45,10 @@ class BoothImporterTest {
     @Test
     fun `importing the same roll again changes nothing`() {
         val booth = existing(
-            voter(1, "W1", "HEMA", "96-3-3/5", phone = "9848012345", visited = true),
-            voter(2, "W2", "SAI", "94-2-2/4"),
+            voter(1, "W1", "HEMA", "90-2-2/2", phone = "9848012345", visited = true),
+            voter(2, "W2", "SAI", "90-3-3/3"),
         )
-        val out = BoothImporter.merge(booth, meta(), listOf(row(1, "W1", "HEMA", "96-3-3/5"), row(2, "W2", "SAI", "94-2-2/4")), 100L)
+        val out = BoothImporter.merge(booth, meta(), listOf(row(1, "W1", "HEMA", "90-2-2/2"), row(2, "W2", "SAI", "90-3-3/3")), 100L)
 
         assertEquals(0, out.added)
         assertEquals(0, out.updated)
@@ -113,13 +113,13 @@ class BoothImporterTest {
     fun `a blank cell does not erase a value already held`() {
         // A partial or filtered export would otherwise quietly delete names and door numbers
         // that were read off the roll.
-        val booth = existing(voter(1, "W1", "HEMA", "96-3-3/5"))
+        val booth = existing(voter(1, "W1", "HEMA", "90-2-2/2"))
         val blank = XlsxReader.Row(1, "W1", "", "")
         val out = BoothImporter.merge(booth, meta(), listOf(blank), 100L)
 
         val v = out.booth.voters.single()
         assertEquals("HEMA", v.name)
-        assertEquals("96-3-3/5", v.house)
+        assertEquals("90-2-2/2", v.house)
         assertTrue("the import says it kept something", out.blanksKept >= 1)
     }
 

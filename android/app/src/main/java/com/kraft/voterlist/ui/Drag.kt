@@ -33,21 +33,20 @@ import kotlin.math.abs
 /**
  * Drag-to-reorder for the family screens, with no library.
  *
- * A drag moves the item one step at a time through the same `moveMember`/`moveFamily`
- * the arrows call, so the tested 0..n-1 reindexing is reused rather than reimplemented:
- * each time the finger travels one row-height past the last step, one more step fires and
- * the list re-renders under the finger. The arrows stay beside the handle -- dragging is
- * fast, arrows are precise, and a screen reader cannot drag at all.
+ * **A drag now puts the card where it is dropped.** It used to move one place per row-height
+ * of finger travel, which is fine for a family of four and unusable for a ward with two
+ * hundred families on the list: getting a card from tenth-from-top to eighth-from-bottom
+ * meant dragging most of the screen twice. The finger's position is turned into a target
+ * slot and the card goes there, with the rest of the list animating aside. The arrows stay
+ * for precision and because a screen reader cannot drag at all.
  *
- * Four things make it feel finished rather than merely work, and each is a thing that was
- * missing: a tick of haptic on every step so the move is felt, not just seen; a frame loop
- * that keeps the list moving while the finger is held past an edge instead of one lurch per
- * drag event; the list's own travel fed back into the same accumulator as the finger's, so
- * a card held past the edge keeps changing places rather than only sliding; and a clean
- * stop on drop, because a drag that ends in a dead pump leaves the list twitching.
+ * Three things make it feel finished rather than merely work: a tick of haptic when the
+ * target changes so the move is felt and not only seen; a frame loop that keeps the list
+ * moving while the finger is held past an edge instead of one lurch per drag event; and a
+ * clean stop on drop, because a drag that ends in a dead pump leaves the list twitching.
  *
- * One instance per scrolling list: row heights and the dragged id are per-list state.
- * Call [trackHeight] on the row and [handle] on its grip, both keyed by the same item id.
+ * One instance per scrolling list. Call [trackHeight] on the row and [cardHandle] on the
+ * card, both keyed by the same item id.
  */
 @Composable
 fun rememberDragReorder(): DragReorder {
@@ -122,17 +121,26 @@ class DragReorder internal constructor(
 
     private val rowHeights = mutableMapOf<String, Float>()
 
-    /** Drag distance banked toward the next reorder step, from the finger and the list alike. */
-    private var carry = 0f
+    /** Finger position within the dragged card, refreshed as the finger moves. */
+    private var fingerLocalY = 0f
 
     /** Signed per-frame self-scroll demanded by the finger's position, 0 when inside. */
     private var pull = 0f
 
     private var pump: Job? = null
     private var liveId: String? = null
-    private var liveStep: ((Int) -> Unit)? = null
 
-    /** Records the row's height, which is one drag-step for this item. */
+    /** The list being reordered, kept so a target can be worked out without the caller. */
+    private var liveList: LazyListState? = null
+
+    /** How many items the list holds, so a target past either end can be clamped. */
+    private var liveCount = 0
+
+    /** The slot last asked for, so the same one is not asked for twice. */
+    private var liveTarget: Int? = null
+    private var liveMoveTo: ((Int) -> Unit)? = null
+
+    /** Records the row's height, used only to centre the finger's target calculation. */
     fun trackHeight(id: String): Modifier =
         Modifier.onGloballyPositioned { rowHeights[id] = it.size.height.toFloat() }
 
@@ -161,7 +169,8 @@ class DragReorder internal constructor(
     fun cardHandle(
         id: String,
         list: LazyListState,
-        onStep: (Int) -> Unit,
+        itemCount: Int,
+        onMoveTo: (Int) -> Unit,
         onSelect: () -> Unit,
         /**
          * True for touches that landed on the row's own buttons rather than on the row.
@@ -250,80 +259,96 @@ class DragReorder internal constructor(
                     if (abs(travel) < pickUpSlopPx) continue
                     pickedUp = true
                     pressAnswered = true
-                    carry = 0f
+                    fingerLocalY = 0f
                     pull = 0f
                     draggingId = id
                     liveId = id
-                    liveStep = onStep
+                    liveList = list
+                    liveCount = itemCount
+                    liveTarget = null
+                    liveMoveTo = onMoveTo
                     haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
                     startPump(list)
                 }
                 change.consume()
                 pull = edgePull(list, change.position.y)
-                carry += dy
-                stepOnce()
+                fingerLocalY += dy
+                reposition()
             }
             if (pickedUp) drop()
         }
     }
 
     /**
-     * The grip an item is dragged by. [onStep] moves it one place (+1 down, -1 up).
+     * Turns the finger's position into a slot, and asks for it once per change.
      *
-     * Holding past an edge scrolls the list with the finger; the list scrolling feeds back
-     * into the same accumulator, so a card held there walks down the order on its own.
-     *
-     * A plain drag, not a long-press one, and that is deliberate. Rows here are long-press
-     * selectable, and a long press on a grip arrives at the row underneath as well -- so
-     * the two fired together and every reorder also selected the row it moved. A handle
-     * that picks up as soon as the finger moves has no long press left to collide with.
-     */
-    fun handle(id: String, list: LazyListState, onStep: (Int) -> Unit): Modifier =
-        Modifier.pointerInput(id, list) {
-            detectDragGestures(
-                onDragStart = {
-                    carry = 0f
-                    pull = 0f
-                    draggingId = id
-                    liveId = id
-                    liveStep = onStep
-                    // Threshold rather than LongPress: the card has not been picked up
-                    // yet, it has just stopped being a tap.
-                    haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                    startPump(list)
-                },
-                onDragEnd = { drop() },
-                onDragCancel = { drop() },
-                onDrag = { change, amount ->
-                    change.consume()
-                    pull = edgePull(list, change.position.y)
-                    carry += amount.y
-                    stepOnce()
-                },
-            )
-        }
-
-    /**
-     * Turns banked distance into whole steps, one haptic per step.
+     * The half of the item the finger is past decides which of the two slots it means: above
+     * the middle it goes *before* that card, below it *after*. Without that half it feels
+     * sticky, because a card will not move at all until your thumb is past its centre --
+     * which, on a tall card, is most of the drag.
      *
      * `TextHandleMove` is the type Android means for "a drag handle moved one notch"; on
      * anything older than API 34 it is silently ignored, which is the right failure -- a
      * missing buzz costs nothing, a wrong buzz costs trust.
      */
-    private fun stepOnce() {
+    private fun reposition() {
+        val list = liveList ?: return
+        val move = liveMoveTo ?: return
         val id = liveId ?: return
-        val onStep = liveStep ?: return
-        val step = rowHeights[id] ?: 200f
-        while (carry >= step) {
-            onStep(1)
-            carry -= step
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val visible = list.layoutInfo.visibleItemsInfo
+        if (visible.isEmpty()) return
+
+        // The dragged card's own offset in the list, found by key rather than by index:
+        // the index moves every time the card is reordered, and the key does not.
+        val mine = visible.firstOrNull { it.key == id }
+        val fingerY = (mine?.offset ?: visible.first().offset).toFloat() + fingerLocalY
+
+        // Above or below the middle of the card under the finger decides which of the two
+        // slots it means: above the middle it goes *before* that card, below it *after*.
+        //
+        // The midpoint, not the edge, is the threshold on purpose. A card is therefore not
+        // swapped out from under a finger that has only just arrived on its neighbour -- the
+        // move happens when the finger commits to being past it. The cost is that clearing
+        // one card takes rather more than one card-height of travel; the point of the rework
+        // is that the finger can then travel any distance in one movement rather than only
+        // one card-height at a time.
+        val mineIndex = visible.firstOrNull { it.key == id }?.index
+        var slot: Int? = null
+        for (v in visible) {
+            val top = v.offset.toFloat()
+            if (fingerY < top) break
+            if (fingerY < top + v.size) {
+                val mid = top + v.size / 2f
+                slot = if (fingerY > mid) v.index + 1 else v.index
+                break
+            }
         }
-        while (carry <= -step) {
-            onStep(-1)
-            carry += step
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        // Past the last visible card, or before the first: the ends of the list.
+        if (slot == null) {
+            slot = if (fingerY < visible.first().offset) {
+                visible.first().index
+            } else {
+                visible.last().index + 1
+            }
         }
+
+        // **The dragged card is itself one of the slots being counted.** The layout above
+        // still includes it, so "go after the third card" is a slot of 3 even when the card
+        // being dragged is the second one -- and moving it to index 3 would put it back
+        // where it already was. Subtracting one when the slot is past its own index is what
+        // turns the slot into the final position the move needs.
+        val slotValue = slot
+        val target = if (mineIndex != null) {
+            com.kraft.voterlist.data.slotToFinalIndex(slotValue, mineIndex)
+        } else {
+            slotValue
+        }
+
+        val clamped = target.coerceIn(0, maxOf(liveCount - 1, 0))
+        if (clamped == liveTarget) return
+        liveTarget = clamped
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        move(clamped)
     }
 
     /** How hard the finger is pulling past an edge, as a signed per-frame scroll. */
@@ -353,10 +378,12 @@ class DragReorder internal constructor(
             while (isActive && draggingId != null) {
                 val wanted = pull
                 if (wanted != 0f) {
-                    val travelled = list.scrollBy(wanted)
-                    if (travelled != 0f) {
-                        carry += travelled
-                        stepOnce()
+                    if (list.scrollBy(wanted) != 0f) {
+                        // The list moving under a still finger is the same as the finger
+                        // moving, so the target is worked out again from scratch. That is
+                        // what lets a card held past the edge keep changing places instead
+                        // of only sliding.
+                        reposition()
                     }
                 }
                 withFrameNanos { }
@@ -367,9 +394,12 @@ class DragReorder internal constructor(
     private fun drop() {
         draggingId = null
         pull = 0f
-        carry = 0f
+        fingerLocalY = 0f
         liveId = null
-        liveStep = null
+        liveList = null
+        liveCount = 0
+        liveTarget = null
+        liveMoveTo = null
         pump?.cancel()
         pump = null
         haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)

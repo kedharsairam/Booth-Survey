@@ -3,7 +3,7 @@
 
 Written because the only spreadsheet tool on this machine is OnlyOffice, which rewrites a
 workbook in its own dialect on save, and because a cell's stored type has to survive the
-round trip. A house number that came back as "98-3-3/2" is fine; one that came back as a
+round trip. A house number that came back as "90-21-21/3" is fine; one that came back as a
 datetime is not, and the difference is visible only in the cell's type, not in its text.
 
 Handles inline strings and shared strings, and reports a cell whose type is not a string

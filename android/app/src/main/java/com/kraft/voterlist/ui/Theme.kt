@@ -51,7 +51,22 @@ private val TealDark = Color(0xFF6FD3E8)
 private val Paper = Color(0xFFF7F9FA)
 private val Card = Color(0xFFFFFFFF)
 private val Muted = Color(0xFFE9EEF1)
-private val Line = Color(0xFFC2CCD2)
+/**
+ * Card outlines and field borders.
+ *
+ * Was #C2CCD2, which measures 1.55:1 against Paper and 1.63:1 against Card -- well under
+ * the 3:1 that WCAG asks of any boundary doing real work, and under it in a way that only
+ * shows up outside. A card whose edge has faded into the background is no longer a card;
+ * on a bright day the family list stops being a list of separate households and becomes one
+ * block of text with gaps in it.
+ *
+ * #78868E measures 3.55:1 on Paper, 3.75:1 on Card and 3.21:1 on the muted fill chips sit
+ * on, so it clears the bar on every surface this app actually draws it against. It is
+ * darker than the brief would suggest indoors, and that is the trade being made on purpose:
+ * the indoor cost is a slightly heavier line, the outdoor cost of the old one was not being
+ * able to see where a household ended.
+ */
+private val Line = Color(0xFF78868E)
 private val MutedInk = Color(0xFF4C5A61)
 
 /** Status colours, kept apart from the Material roles because they mean one thing each. */
@@ -167,7 +182,13 @@ private val LightScheme = lightColorScheme(
     surfaceContainer = Paper,
     surfaceContainerHigh = Color(0xFFEFF3F5),
     outline = Line,
-    outlineVariant = Color(0xFFD9E0E4),
+    // Dividers were Color(0xFFD9E0E4) and measured 1.26:1 on Paper. That is fine on a desk
+    // and gone in daylight: at a brightness where the body text is still comfortably
+    // readable, the line that tells him one person's row has ended and the next has begun
+    // has already disappeared, and a list of names becomes a wall. WCAG asks 3:1 for any
+    // boundary that carries meaning, and a row divider is exactly that. This clears it and
+    // stays lighter than [Line] so the card outline still reads as the stronger edge.
+    outlineVariant = Color(0xFF849198),
     error = Color(0xFFB3261E),
     onError = Color.White,
     errorContainer = Color(0xFFFCE8E6),
@@ -189,7 +210,9 @@ private val DarkScheme = darkColorScheme(
     surfaceVariant = Color(0xFF232C30),
     onSurfaceVariant = Color(0xFFB9C4CA),
     outline = Color(0xFF6C7A81),
-    outlineVariant = Color(0xFF333E43),
+    // Same reason as the light scheme's divider. #333E43 on #141A1D is 1.34:1 -- the row
+    // edges were effectively absent in dark too.
+    outlineVariant = Color(0xFF5A676D),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
 )

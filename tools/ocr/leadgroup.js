@@ -6,16 +6,16 @@
 // magnified crops), the pipeline read 25 correctly. Of the five it got wrong, four
 // were the same mistake:
 //
-//     read '1-1-6'    truth '91-7-7/1'      leading group '1'
-//     read '1-1-7'    truth '92-7-7/2'      leading group '1'
-//     read '1-1-7'    truth '92-7-7/2'      leading group '1'
-//     read '17-1-15'  truth '95-4-4/3'     leading group '17'
+//     read '1-1-6'    truth '90-24-24/6'      leading group '1'
+//     read '1-1-7'    truth '90-25-25/7'      leading group '1'
+//     read '1-1-7'    truth '90-25-25/7'      leading group '1'
+//     read '17-1-15'  truth '90-13-13/4'     leading group '17'
 //
 // Not noise. One cause: the first glyph of the leading group being lost, or read as
 // something else. house.js already says as much in its comments -- "a leading group of a
 // single digit is far more likely a dropped digit than a real address" -- and then
 // deliberately stops there: "That inference is reported as a warning, never applied as a
-// repair, because '91-7-7/1' and '1-1-6' are different houses."
+// repair, because '90-24-24/6' and '1-1-6' are different houses."
 //
 // The caution is right about silence and wrong about inaction. A wrong house number is
 // not a wrong address that gets tidied later; it is a wrong *household*, because the
@@ -182,7 +182,7 @@ function proposeRepair(rawValue, modal, known, middles) {
   // The group is one this booth uses; whatever is wrong is elsewhere.
   if (from === modal) return null;
   // Never rewrite a group this ward demonstrably uses to a more common one: that turns
-  // 10-1-4 into 98-6-6/4, which is a different house. Two sets count as "demonstrably uses",
+  // 10-1-4 into 90-22-22/4, which is a different house. Two sets count as "demonstrably uses",
   // and both are needed:
   //
   //   known       groups seen in *this booth's* clean reads -- but a single page of 30
