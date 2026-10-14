@@ -226,16 +226,28 @@ fun ListRow(
                 )
             }
         }
+        DropdownGap()
         AppDropdownMenu(
             expanded = open,
             onDismissRequest = { open = false },
-            title = label,
+            // Nudged in by the field's own label inset, so the menu's left edge lines up
+            // with where the text inside the box begins rather than with the card's edge.
+            // It used to anchor to the 48dp chevron at the far right and open leftwards,
+            // which put it in the middle of the screen with edges that matched nothing.
+            modifier = Modifier.padding(start = Space.xs),
         ) {
             if (needsCasteFirst) {
                 DropdownNote("Choose a caste above first")
             }
             if (options.isEmpty() && !needsCasteFirst) {
                 DropdownNote("Nothing on this list yet")
+            }
+            if (!needsCasteFirst && value.isNotBlank() && options.isNotEmpty()) {
+                DropdownClear(
+                    enabled = true,
+                    onClick = { vm.setField(field, ""); open = false },
+                )
+                DropdownDivider()
             }
             options.forEach { o ->
                 DropdownChoice(

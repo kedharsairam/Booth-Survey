@@ -238,25 +238,66 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                     }
                 }
 
-                Spacer(Modifier.height(Space.md))
-                ActionButton(
-                    label = "New family",
-                    caption = "Group the people at one house",
-                    icon = { Icon(Icons.Default.GroupAdd, null, Modifier.size(KraftSpacing.Spacing20)) },
-                    onClick = { vm.createFamily() },
-                    modifier = Modifier.fillMaxWidth(),
+                Spacer(Modifier.height(Space.lg))
+
+                // What he has recorded, rather than what he might do.
+                //
+                // The two action cards that used to be here -- New family, New voter -- were
+                // the largest, most prominent things on the screen, and they are the two
+                // things he does least: a handful of times in a whole ward. Meanwhile
+                // everything he had recorded about the 1216 people he is there to speak to
+                // had no home at all, and a third of the screen was empty. Both charts are
+                // built from the shared lists, so they describe exactly the words he is
+                // using to record people rather than a separate vocabulary.
+                val byCaste = splitCounts(s.booth.voters) { it.caste }
+                val byParty = splitCounts(s.booth.voters) { it.party }
+                val recordedCaste = byCaste.sumOf { it.second.second }
+                val recordedParty = byParty.sumOf { it.second.second }
+
+                SplitChart(
+                    title = "Caste",
+                    subtitle = "$recordedCaste of ${s.booth.voters.size} people have a caste recorded",
+                    rows = byCaste.map { (name, counts) ->
+                        SplitRow(name, counts.first, counts.second)
+                    } + nestedSubCastes(s.booth.voters),
+                    accent = Status.done,
+                    emptyMessage = "No caste recorded yet. It appears here once you record one.",
                 )
+
                 Spacer(Modifier.height(Space.md))
-                ActionButton(
-                    label = "New voter",
-                    caption = "Someone who is not in the list",
-                    icon = { Icon(Icons.Default.PersonAdd, null, Modifier.size(KraftSpacing.Spacing20)) },
-                    onClick = { vm.startCreateVoter() },
-                    modifier = Modifier.fillMaxWidth(),
+
+                SplitChart(
+                    title = "Party",
+                    subtitle = "$recordedParty of ${s.booth.voters.size} people have a party recorded",
+                    rows = byParty.map { (name, counts) ->
+                        SplitRow(name, counts.first, counts.second)
+                    },
+                    accent = MaterialTheme.colorScheme.primary,
+                    emptyMessage = "No party recorded yet. It appears here once you record one.",
                 )
+
                 Spacer(Modifier.height(Space.xl))
             }
         }
+    }
+}
+
+/**
+ * Sub-castes, indented under the caste they were recorded against.
+ *
+ * Placed as one flat list after the castes rather than interleaved, because with the roll
+ * as imported there are no castes to interleave with -- everything sits under "No caste
+ * recorded yet" until he starts. When a caste does exist its sub-castes still appear here,
+ * quiet and indented, which is the relationship the office asks about.
+ */
+private fun nestedSubCastes(
+    voters: List<com.kraft.voterlist.data.Voter>,
+): List<SplitRow> {
+    val rows = splitCounts(voters) { v ->
+        if (v.subCaste.isBlank()) "" else "${v.caste} · ${v.subCaste}"
+    }
+    return rows.map { (name, counts) ->
+        SplitRow(name, counts.first, counts.second, nested = true)
     }
 }
 

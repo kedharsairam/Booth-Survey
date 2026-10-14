@@ -68,6 +68,33 @@ object BoothMetrics {
          * these two do; neither is spacing, which is why they are here and not in a token. */
         val TonalElevation = 3.dp
         val ShadowElevation = 8.dp
+
+        /** Air between the field's underline and the top of the menu, so the two do not
+         * read as one joined shape. */
+        val GapAbove = 4.dp
+
+        /** Cap on the whole menu, header included. A menu taller than this stops being a
+         * choice from a field and starts being a screen. */
+        val MaxMenuHeight = 340.dp
+    }
+
+    /** Dimensions of the charts on Home. */
+    object Chart {
+        /**
+         * Every bar is this wide.
+         *
+         * The whole reason the chart is a chart: the bars have to be the same length so
+         * they can be compared against each other down the list. Sized to leave room for a
+         * label, a count and the bar itself on a 360dp phone at a large font, which is the
+         * only phone this runs on.
+         */
+        val BarWidth = 84.dp
+
+        /** Bar thickness. A top-level row is a headline and gets the thick bar; a sub-caste
+         * nested under it is a detail and gets the thin one, so the two can be told apart
+         * without reading the label. */
+        val BarHeight = 12.dp
+        val BarHeightNested = 8.dp
     }
 
     /**

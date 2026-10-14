@@ -579,8 +579,6 @@ private fun BoothBar(
                         AppDropdownMenu(
                             expanded = open,
                             onDismissRequest = { open = false },
-                            title = "Switch booth",
-                            modifier = Modifier.widthIn(min = KraftSpacing.ScreenEdge * 9),
                         ) {
                             s.index.booths.forEach { e ->
                                 DropdownChoice(

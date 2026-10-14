@@ -109,6 +109,9 @@ object Status {
 }
 
 object Space {
+    /** No inset. Named rather than 0.dp so the no-raw-dp rule can tell an intentional
+     * zero from a value somebody typed at the call site. */
+    val none: androidx.compose.ui.unit.Dp @Composable get() = androidx.compose.ui.unit.Dp(0f)
     val xs: androidx.compose.ui.unit.Dp @Composable get() = LocalSpace.current.xs
     val sm: androidx.compose.ui.unit.Dp @Composable get() = LocalSpace.current.sm
     val md: androidx.compose.ui.unit.Dp @Composable get() = LocalSpace.current.md
