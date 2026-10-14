@@ -556,7 +556,7 @@ private fun FamilyCard(
         ),
         // The accent outline is the cheapest lift signal there is: no shadow to wash out
         // in sunlight, and it costs one animated colour rather than a whole draw pass.
-        border = BorderStroke(1.dp, outline), // @kraft-lint-ignore spacing.no-raw-dp — a hairline outline; the thickness is the point, and 2dp reads as a border
+        border = BorderStroke(BoothMetrics.Chrome.Hairline, outline),
         shape = MaterialTheme.shapes.medium,
     ) {
         // Even on every side. It was Space.md across and Space.sm down, which made the

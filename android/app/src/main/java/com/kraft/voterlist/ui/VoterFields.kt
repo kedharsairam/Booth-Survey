@@ -77,7 +77,7 @@ private fun FieldLabel(label: String) {
         label,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 2.dp), // @kraft-lint-ignore spacing.no-raw-dp — a hairline gap under one caption
+        modifier = Modifier.padding(bottom = BoothMetrics.Chrome.CaptionGap),
     )
 }
 

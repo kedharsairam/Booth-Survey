@@ -62,5 +62,39 @@ object BoothMetrics {
         /** The tick's box. Reserved whether or not a tick is showing, so labels never shift
          * sideways as the eye moves down a list that has one selected value in it. */
         val TickBox = 24.dp
+
+        /** How far the menu's own surface is tinted up, and how far it is lifted off the
+         * form behind it. A menu has to read as above the thing it covers, which is what
+         * these two do; neither is spacing, which is why they are here and not in a token. */
+        val TonalElevation = 3.dp
+        val ShadowElevation = 8.dp
+    }
+
+    /**
+     * The numbers that belong to this app's chrome rather than to any of its screens.
+     *
+     * Declared here rather than left as a literal at the call site with a waiver comment
+     * beside it. The waiving worked in kraft-lint's plain output but not in the GitHub
+     * format CI uses, so a correctly-waived line was failing the build; giving these a
+     * name is better anyway, because "what is this 1dp for" is a question a reader should
+     * not have to answer from a file 500 lines away.
+     */
+    object Chrome {
+        /** A hairline border. The thickness is the point; 2dp reads as a border, 1dp as a
+         * hairline, and neither is a spacing step between two elements. */
+        val Hairline = 1.dp
+
+        /** Inset on a status choice's caption, kept tight to its own control. */
+        val CaptionInset = 4.dp
+
+        /** Gap under a section caption, which sits closer to its own field than to the
+         * section above it. */
+        val CaptionGap = 2.dp
+
+        /** Bounds of a measured text column: the narrowest a serial column may be, and the
+         * widest a four-digit number needs before the name is squeezed. A function of the
+         * text's own metrics, so it cannot sit on the 8px rhythm. */
+        val MinNumberColumn = 16.dp
+        val MaxNumberColumn = 96.dp
     }
 }

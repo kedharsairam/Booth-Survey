@@ -99,7 +99,7 @@ fun numberColumnWidth(numbers: List<Int>): Dp {
     val digits = widest.coerceIn(1, 4)
     val line = MaterialTheme.typography.titleLarge.lineHeight.value
     return (line * 0.62f * digits * LocalDensity.current.fontScale).dp
-        .coerceIn(16.dp, 96.dp) // @kraft-lint-ignore spacing.no-raw-dp, spacing.rhythm — a measured text column, not a spacing step
+        .coerceIn(BoothMetrics.Chrome.MinNumberColumn, BoothMetrics.Chrome.MaxNumberColumn)
 }
 
 /**

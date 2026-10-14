@@ -87,8 +87,8 @@ fun AppDropdownMenu(
         androidx.compose.material3.Surface(
             shape = MaterialTheme.shapes.small,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp, // @kraft-lint-ignore spacing.no-raw-dp — a surface tone, not a spacing step
-            shadowElevation = 8.dp, // @kraft-lint-ignore spacing.no-raw-dp — lifts the menu off the form behind it
+            tonalElevation = BoothMetrics.Dropdown.TonalElevation,
+            shadowElevation = BoothMetrics.Dropdown.ShadowElevation,
         ) {
             Column(Modifier.widthIn(min = minWidth)) {
                 DropdownTitle(title)

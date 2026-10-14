@@ -140,7 +140,7 @@ private fun Segment(
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 4.dp), // @kraft-lint-ignore spacing.no-raw-dp — a caption inset, not spacing between elements
+            modifier = Modifier.padding(horizontal = BoothMetrics.Chrome.CaptionInset),
         )
     }
 }
