@@ -64,7 +64,9 @@ object PdfExporter {
     private val COL_PT = listOf(
         35.45f, 63.80f, 198.45f, 35.45f, 85.05f,
         14.15f, 14.15f, 14.15f, 14.15f, 14.15f, 14.15f, 14.15f, 14.15f, 14.15f, 14.15f,
-        70.85f, 28.35f, 56.70f, 35.45f,
+        // Sub Caste keeps the wide box (names like "MANGALA" need room), Party the narrow
+        // one (short codes like "TDP"), and Others is the office's to fill in.
+        70.85f, 56.70f, 28.35f, 35.45f,
     )
     private val TABLE_W: Float = COL_PT.sum()
 
@@ -97,10 +99,10 @@ object PdfExporter {
     private const val LINE_SPACING = 13.6f
 
     /**
-     * The template's headings fill their cells edge to edge -- "Caste" in a 28.35pt column
-     * and "Others" in a 35.45pt one -- so their padding is a hair, not the 5.4pt the table
-     * style declares for the empty body cells. Data keeps a real margin, because a printed
-     * value in a hand-filled box needs breathing room.
+     * The template's headings fill their cells edge to edge -- "Others" in a 35.45pt column,
+     * and the 28.35pt box beside it is narrower still -- so their padding is a hair, not the
+     * 5.4pt the table style declares for the empty body cells. Data keeps a real margin,
+     * because a printed value in a hand-filled box needs breathing room.
      */
     private const val HEAD_PAD = 0.5f
     private const val DATA_PAD = 2.5f
@@ -118,9 +120,11 @@ object PdfExporter {
     private const val C_VOTER = 4
     private const val C_PHONE = 5
     private const val C_ADDR = C_PHONE + PHONE_DIGITS
-    private const val C_CASTE = C_ADDR + 1
-    private const val C_SUBCASTE = C_ADDR + 2
-    private const val C_PARTY = C_ADDR + 3
+    // The three boxes at the right of the form: sub caste, party, and the form's own
+    // "Others". Caste is no longer printed, so the sub caste takes the first box and the
+    // party the second; "Others" stays empty.
+    private const val C_SUBCASTE = C_ADDR + 1
+    private const val C_PARTY = C_ADDR + 2
 
     private enum class Align { LEFT, CENTRE, RIGHT }
 
@@ -375,10 +379,11 @@ object PdfExporter {
             "Family sr.no." to 1, "Door no." to 1, "Full Name" to 1,
             "Voter List sr.no." to 1, "Voter ID no." to 1,
             "Phone Number" to PHONE_DIGITS, "Current Address" to 1,
-            // The last heading prints as "Others", which is what the MLA's own form says there.
-            // The app still calls the field Party, because that is what it is -- this is only
-            // the heading on the paper, matched to the form it has to sit beside.
-            "Caste" to 1, "Sub Caste" to 1, "Others" to 1,
+            // The office asked for the sub caste and the party in the last three boxes, and
+            // no caste at all: the sub caste is the one that gets written down, and the
+            // party is what the count is for. "Others" is the MLA's own heading and stays,
+            // empty -- whatever belongs in it is the office's to write, not the app's.
+            "Sub Caste" to 1, "Party" to 1, "Others" to 1,
         )
         var leaf = 0
         for ((label, span) in heads) {
@@ -394,7 +399,9 @@ object PdfExporter {
      * The cells are centred as the template centres them, with two exceptions, both of them
      * deliberate departures from the template because the surveyor asked for them.
      *
-     * "Sub Caste" is the form's own: it carries no `w:jc`, so it prints flush left.
+     * "Sub Caste" is flush left. The template sets that box left-aligned (`w:jc` is absent)
+     * and it is the longest value in the row's last three boxes, so left is also what makes
+     * the column read as a list rather than a ragged centre.
      *
      * "Full Name" is centred in the blank template because there is nothing in it yet. With
      * thirty Telugu names down the column, centring makes every name start at a different
@@ -415,7 +422,9 @@ object PdfExporter {
         val digits = v.phone.filter { it.isDigit() }.take(PHONE_DIGITS).padEnd(PHONE_DIGITS)
         for (i in 0 until PHONE_DIGITS) at(C_PHONE + i, digits[i].toString())
         at(C_ADDR, v.address)
-        at(C_CASTE, v.caste)
+        // Sub caste, then party, then nothing. The party goes in the party box rather than
+        // the caste's old one: the office counts parties, and a value in the wrong box is
+        // worse than an empty box, because it reads as verified.
         at(C_SUBCASTE, v.subCaste, Align.LEFT)
         at(C_PARTY, v.party)
     }
