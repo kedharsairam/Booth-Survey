@@ -220,7 +220,15 @@ fun VoterListScreen(
                 ExtendedFloatingActionButton(
                     onClick = { actOpen = true },
                     modifier = Modifier.align(Alignment.BottomEnd)
-                        .padding(horizontal = Space.lg, vertical = Space.md),
+                        .padding(horizontal = Space.lg, vertical = Space.md)
+                        // On the device the count is drawn but reaches the accessibility
+                        // tree as an unlabelled button, so the one way into every bulk
+                        // action announces nothing at all. Say it here, and say what
+                        // tapping it opens, rather than reading "3 ticked" cold.
+                        .semantics {
+                            contentDescription =
+                                "${s.selectedCount} ticked. Change all of them"
+                        },
                     icon = { Icon(Icons.Default.Tune, null) },
                     text = { Text("${s.selectedCount} ticked") },
                 )

@@ -1,9 +1,11 @@
 package com.kraft.voterlist
 
 import android.view.ViewConfiguration
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -15,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import com.kraft.voterlist.ui.FamilyEditScreen
 import com.kraft.voterlist.ui.KraftTheme
 import com.kraft.voterlist.ui.SurveyViewModel
+import com.kraft.voterlist.ui.VoterListScreen
 import org.junit.Assert.assertEquals
 import org.junit.After
 import org.junit.Rule
@@ -140,6 +143,34 @@ class DragTest {
             listOf(SYNTH_BASE + 1, SYNTH_BASE, SYNTH_BASE + 2),
             vm.state.value.membersOf(fid).map { it.serial },
         )
+    }
+
+    /**
+     * The ticked-count pill used to be a button with no label in the accessibility tree:
+     * the count was drawn on screen, but the node arrived as an unlabelled clickable --
+     * and that pill is the only way into every bulk action. kraft-lint cannot catch this
+     * one (a11y.content-description is on its "not machine-checked" list), so it is
+     * caught here instead, on the composed screen rather than with adb.
+     */
+    @Test
+    fun the_ticked_count_says_what_it_is() {
+        val vm = preparedVm()
+        compose.setContent {
+            KraftTheme {
+                val s by vm.state.collectAsState()
+                VoterListScreen(
+                    vm, s,
+                    listState = rememberLazyListState(),
+                    lastBoothId = null,
+                    onBoothSeen = {},
+                    onImport = {},
+                )
+            }
+        }
+        val id = vm.state.value.booth.voters.first { it.serial == SYNTH_BASE }.id
+        vm.toggleSelect(id)
+        compose.waitUntil(10_000) { vm.state.value.selectedCount == 1 }
+        compose.onNodeWithContentDescription("1 ticked. Change all of them").assertExists()
     }
 
     /**

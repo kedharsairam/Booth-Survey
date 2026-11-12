@@ -58,7 +58,7 @@ Thumbs.db
 node_modules/
 tools/ocr/node_modules
 
-# Local foundation checkout for the composite build. Public code, safe inside
-# a private repo — dependencies flow inward only. CI checks this out beside
-# the repo root; developers clone it here so ../kraft-foundation resolves.
+# Local foundation checkout for the composite build. Public code, so naming it here
+# leaks nothing: dependencies flow inward only. CI checks this out beside the repo
+# root; developers clone it here so ../kraft-foundation resolves.
 kraft-foundation/

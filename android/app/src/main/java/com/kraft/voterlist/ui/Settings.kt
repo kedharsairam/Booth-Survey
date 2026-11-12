@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -622,6 +623,10 @@ private fun BoothCard(
                     enabled = s.hasBooth,
                     modifier = Modifier.weight(1f).heightIn(min = BoothMetrics.FieldHeight),
                     shape = MaterialTheme.shapes.medium,
+                    // A tighter side inset than the 24dp default. At the phone's larger
+                    // text setting the default left "Back up" and "Put back" wrapped onto
+                    // two lines, so a pair of identical buttons had two different heights.
+                    contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.sm),
                 ) {
                     Icon(Icons.Default.Save, null)
                     Spacer(Modifier.width(Space.sm))
@@ -631,6 +636,7 @@ private fun BoothCard(
                     onClick = onRestore,
                     modifier = Modifier.weight(1f).heightIn(min = BoothMetrics.FieldHeight),
                     shape = MaterialTheme.shapes.medium,
+                    contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.sm),
                 ) {
                     Icon(Icons.Default.Unarchive, null)
                     Spacer(Modifier.width(Space.sm))
