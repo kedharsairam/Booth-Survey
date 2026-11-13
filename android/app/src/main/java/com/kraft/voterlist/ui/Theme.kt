@@ -222,7 +222,7 @@ fun KraftTheme(
 }
 
 /** Border width for manga panels — thicker than hairline so it survives daylight. */
-val MangaBorderWidth = 2.dp
+val MangaBorderWidth = KraftSpacing.Spacing2
 
 /** Panel elevation — subtle lift so panels read as separate objects on the page. */
-val MangaPanelElevation = 2.dp
+val MangaPanelElevation = KraftSpacing.Spacing2
