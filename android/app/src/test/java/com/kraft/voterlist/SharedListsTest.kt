@@ -63,7 +63,8 @@ class SharedListsTest {
     fun `OC offers exactly his father's seven, alphabetically`() {
         assertEquals(
             listOf(
-                "Arya Vysya", "Brahmin", "Kamma", "Kapu", "Kshatriya", "Reddy", "Others",
+                "Arya Vysya", "Brahmin", "Kamma", "Kapu", "Kshatriya", "Minority",
+                "Others", "Reddy",
             ),
             Lists.DEFAULT_SUBCASTES["OC"],
         )
@@ -73,8 +74,10 @@ class SharedListsTest {
     fun `BC offers exactly his father's eleven, alphabetically`() {
         assertEquals(
             listOf(
-                "Devanga", "Goud", "Karnabakthulu", "Padmasali", "Salivahana", "Segidi",
-                "Settibalija", "Telikula", "Viswabrahmin", "Others",
+                "Devanga", "Goud", "Karnabakthulu", "Nayi Brahmin", "Others",
+                "Padmasali", "Rejika", "Salivahana", "Segidi", "Settibalija",
+                "Srisayana", "Telikula", "Turupukapu", "Vaddi", "Velama",
+                "Viswabrahmin", "Yadava",
             ),
             Lists.DEFAULT_SUBCASTES["BC"],
         )
@@ -85,17 +88,17 @@ class SharedListsTest {
         // The roll has ST households in it. This ward's survey does not ask, so nothing is
         // offered rather than a plausible-sounding guess that ends up in a spreadsheet.
         assertTrue("SC" in Lists.DEFAULT_SUBCASTES)
-        assertEquals(listOf("Mala", "Mala Dasari", "Madiga", "Relli", "Others"), Lists().subCasteGroup("SC"))
+        assertEquals(listOf("Mala", "Mala Dasari", "Others"), Lists().subCasteGroup("SC"))
         assertTrue("ST" in Lists.DEFAULT_SUBCASTES)
-        assertEquals(listOf("Yerukula", "Others"), Lists().subCasteGroup("ST"))
+        assertEquals(listOf("Madiga", "Palli", "Relli", "Yerukula", "Others"), Lists().subCasteGroup("ST"))
     }
 
     @Test
     fun `a fresh install can work without typing anything in first`() {
         // No stored groups at all, which is every phone that has never had a list edited.
         val fresh = Lists()
-        assertEquals(7, fresh.subCasteNamesFor("OC").size)
-        assertEquals(10, fresh.subCasteNamesFor("BC").size)
+        assertEquals(8, fresh.subCasteNamesFor("OC").size)
+        assertEquals(17, fresh.subCasteNamesFor("BC").size)
         assertEquals(5, fresh.parties.size)
         assertEquals(5, fresh.addresses.size)
         assertEquals(4, fresh.castes.size)
@@ -124,7 +127,7 @@ class SharedListsTest {
             "OC", Lists.DEFAULT_SUBCASTES["OC"].orEmpty() + "Vadderla",
         )
         val names = after.subCasteGroup("OC")
-        assertEquals(8, names.size)
+        assertEquals(9, names.size)
         assertEquals(names.sortedWith(String.CASE_INSENSITIVE_ORDER), names)
         assertTrue("Vadderla" in names)
     }
@@ -134,7 +137,7 @@ class SharedListsTest {
         val his = Lists(subCastes = mapOf("OC" to listOf("Kapu", "Reddy")))
         assertEquals(listOf("Kapu", "Reddy"), his.subCasteGroup("OC"))
         // The other caste is untouched by that.
-        assertEquals(10, his.subCasteGroup("BC").size)
+        assertEquals(17, his.subCasteGroup("BC").size)
     }
 
     // --- sub caste follows caste ------------------------------------------
@@ -186,7 +189,7 @@ class SharedListsTest {
         // group means "not customised", which is what makes a fresh install usable.
         val custom = Lists(subCastes = mapOf("OC" to listOf("Brahmin")))
         assertEquals(listOf("Brahmin"), custom.subCasteNamesFor("OC"))
-        assertEquals(10, custom.subCasteNamesFor("BC").size)
+        assertEquals(17, custom.subCasteNamesFor("BC").size)
     }
 
     @Test

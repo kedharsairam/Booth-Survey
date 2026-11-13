@@ -525,17 +525,20 @@ data class Lists(
          */
         val DEFAULT_SUBCASTES: Map<String, List<String>> = mapOf(
             "OC" to listOf(
-                "Arya Vysya", "Brahmin", "Kamma", "Kapu", "Kshatriya", "Reddy", "Others",
+                "Arya Vysya", "Brahmin", "Kamma", "Kapu", "Kshatriya", "Minority",
+                "Others", "Reddy",
             ),
             "BC" to listOf(
-                "Devanga", "Goud", "Karnabakthulu", "Padmasali", "Salivahana", "Segidi",
-                "Settibalija", "Telikula", "Viswabrahmin", "Others",
+                "Devanga", "Goud", "Karnabakthulu", "Nayi Brahmin", "Others",
+                "Padmasali", "Rejika", "Salivahana", "Segidi", "Settibalija",
+                "Srisayana", "Telikula", "Turupukapu", "Vaddi", "Velama",
+                "Viswabrahmin", "Yadava",
             ),
             "SC" to listOf(
-                "Mala", "Mala Dasari", "Madiga", "Relli", "Others",
+                "Mala", "Mala Dasari", "Others",
             ),
             "ST" to listOf(
-                "Yerukula", "Others",
+                "Madiga", "Palli", "Relli", "Yerukula", "Others",
             ),
         )
 
