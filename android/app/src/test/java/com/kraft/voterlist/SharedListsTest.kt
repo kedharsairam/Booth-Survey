@@ -26,14 +26,14 @@ class SharedListsTest {
 
     @Test
     fun `caste offers the three the ward works in`() {
-        assertEquals(listOf("OC", "BC", "SC/ST"), Lists.DEFAULT_CASTES)
+        assertEquals(listOf("OC", "BC", "SC", "ST"), Lists.DEFAULT_CASTES)
     }
 
     @Test
     fun `the fine-grained roll categories are no longer offered`() {
         // They are on the electoral roll, and they are not questions a surveyor asks at a
         // door. Offering them made him choose between BC-A and BC-B per household.
-        for (retired in listOf("BC-A", "BC-B", "BC-C", "BC-D", "SC", "ST")) {
+        for (retired in listOf("BC-A", "BC-B", "BC-C", "BC-D")) {
             assertFalse(
                 "$retired should not be offered as a caste",
                 retired in Lists().castes,
@@ -63,7 +63,7 @@ class SharedListsTest {
     fun `OC offers exactly his father's seven, alphabetically`() {
         assertEquals(
             listOf(
-                "Aarya Vaysya", "Brahmin", "Kapu", "Kshatriya", "Muslim", "Others", "Reddy",
+                "Arya Vysya", "Brahmin", "Kamma", "Kapu", "Kshatriya", "Reddy", "Others",
             ),
             Lists.DEFAULT_SUBCASTES["OC"],
         )
@@ -73,8 +73,8 @@ class SharedListsTest {
     fun `BC offers exactly his father's eleven, alphabetically`() {
         assertEquals(
             listOf(
-                "Devanga", "Kammari", "Karnibathulu", "Naya Bhrammana", "Others",
-                "Padmasali", "Pallilu", "Rajika", "Segidi", "Vaddilu", "Visva Bhrammana",
+                "Devanga", "Goud", "Karnabakthulu", "Padmasali", "Salivahana", "Segidi",
+                "Settibalija", "Telikula", "Viswabrahmin", "Others",
             ),
             Lists.DEFAULT_SUBCASTES["BC"],
         )
@@ -84,8 +84,10 @@ class SharedListsTest {
     fun `SC ST has no sub castes, and none were invented`() {
         // The roll has ST households in it. This ward's survey does not ask, so nothing is
         // offered rather than a plausible-sounding guess that ends up in a spreadsheet.
-        assertFalse("SC/ST" in Lists.DEFAULT_SUBCASTES)
-        assertEquals(emptyList<String>(), Lists().subCasteGroup("SC/ST"))
+        assertTrue("SC" in Lists.DEFAULT_SUBCASTES)
+        assertEquals(listOf("Mala", "Mala Dasari", "Madiga", "Relli", "Others"), Lists().subCasteGroup("SC"))
+        assertTrue("ST" in Lists.DEFAULT_SUBCASTES)
+        assertEquals(listOf("Yerukula", "Others"), Lists().subCasteGroup("ST"))
     }
 
     @Test
@@ -93,10 +95,10 @@ class SharedListsTest {
         // No stored groups at all, which is every phone that has never had a list edited.
         val fresh = Lists()
         assertEquals(7, fresh.subCasteNamesFor("OC").size)
-        assertEquals(11, fresh.subCasteNamesFor("BC").size)
+        assertEquals(10, fresh.subCasteNamesFor("BC").size)
         assertEquals(5, fresh.parties.size)
         assertEquals(5, fresh.addresses.size)
-        assertEquals(3, fresh.castes.size)
+        assertEquals(4, fresh.castes.size)
     }
 
     @Test
@@ -132,7 +134,7 @@ class SharedListsTest {
         val his = Lists(subCastes = mapOf("OC" to listOf("Kapu", "Reddy")))
         assertEquals(listOf("Kapu", "Reddy"), his.subCasteGroup("OC"))
         // The other caste is untouched by that.
-        assertEquals(11, his.subCasteGroup("BC").size)
+        assertEquals(10, his.subCasteGroup("BC").size)
     }
 
     // --- sub caste follows caste ------------------------------------------
@@ -141,7 +143,7 @@ class SharedListsTest {
         subCastes = mapOf(
             "OC" to listOf("Brahmin", "Kapu"),
             "BC" to listOf("Bedu", "Kurupala"),
-            "SC/ST" to listOf("Adi Dravida"),
+            "SC" to listOf("Adi Dravida"),
         ),
     )
 
@@ -149,7 +151,7 @@ class SharedListsTest {
     fun `choosing a caste offers only that caste's sub castes`() {
         assertEquals(listOf("Brahmin", "Kapu"), lists.subCasteNamesFor("OC"))
         assertEquals(listOf("Bedu", "Kurupala"), lists.subCasteNamesFor("BC"))
-        assertEquals(listOf("Adi Dravida"), lists.subCasteNamesFor("SC/ST"))
+        assertEquals(listOf("Adi Dravida"), lists.subCasteNamesFor("SC"))
     }
 
     @Test
@@ -184,7 +186,7 @@ class SharedListsTest {
         // group means "not customised", which is what makes a fresh install usable.
         val custom = Lists(subCastes = mapOf("OC" to listOf("Brahmin")))
         assertEquals(listOf("Brahmin"), custom.subCasteNamesFor("OC"))
-        assertEquals(11, custom.subCasteNamesFor("BC").size)
+        assertEquals(10, custom.subCasteNamesFor("BC").size)
     }
 
     @Test
@@ -218,7 +220,7 @@ class SharedListsTest {
         // This is what produced two identical "Sub caste · OC" panels in Settings: OC is in
         // the caste list AND, once a sub caste has been typed under it, a key in the sub
         // caste map. The two lists were concatenated with nothing removing the overlap.
-        assertEquals(listOf("OC", "BC", "SC/ST"), lists.castesWithSubCastes())
+        assertEquals(listOf("OC", "BC", "SC", "ST"), lists.castesWithSubCastes())
         assertEquals(1, lists.castesWithSubCastes().count { it.equals("OC", true) })
     }
 
@@ -239,8 +241,8 @@ class SharedListsTest {
     @Test
     fun `a group under a caste that is not on the list still gets a panel`() {
         // His values must not become unreachable because the caste was renamed or retired.
-        val odd = Lists(castes = listOf("OC", "BC"), subCastes = mapOf("SC/ST" to listOf("Adi")))
-        assertEquals(listOf("OC", "BC", "SC/ST"), odd.castesWithSubCastes())
+        val odd = Lists(castes = listOf("OC", "BC"), subCastes = mapOf("SC" to listOf("Adi")))
+        assertEquals(listOf("OC", "BC", "SC"), odd.castesWithSubCastes())
     }
 
     @Test
@@ -268,7 +270,7 @@ class SharedListsTest {
         assertEquals(listOf("Kapu"), after.subCasteGroup("oc"))
         // The other two are untouched.
         assertEquals(listOf("Bedu", "Kurupala"), after.subCasteGroup("BC"))
-        assertEquals(listOf("Adi Dravida"), after.subCasteGroup("SC/ST"))
+        assertEquals(listOf("Adi Dravida"), after.subCasteGroup("SC"))
     }
 
     @Test
@@ -309,7 +311,7 @@ class SharedListsTest {
         val back = readBackupOf(backupJsonOf(booth, lists))
         assertNotNull(back)
         assertEquals(listOf("Brahmin", "Kapu"), back!!.lists.subCasteNamesFor("OC"))
-        assertEquals(listOf("Adi Dravida"), back.lists.subCasteNamesFor("SC/ST"))
+        assertEquals(listOf("Adi Dravida"), back.lists.subCasteNamesFor("SC"))
     }
 
     @Test

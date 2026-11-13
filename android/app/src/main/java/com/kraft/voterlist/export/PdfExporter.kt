@@ -384,11 +384,10 @@ object PdfExporter {
             "Family sr.no." to 1, "Door no." to 1, "Full Name" to 1,
             "Voter List sr.no." to 1, "Voter ID no." to 1,
             "Phone Number" to PHONE_DIGITS, "Current Address" to 1,
-            // The office asked for the sub caste and the party in the last three boxes, and
-            // no caste at all: the sub caste is the one that gets written down, and the
-            // party is what the count is for. "Others" is the MLA's own heading and stays,
-            // empty -- whatever belongs in it is the office's to write, not the app's.
-            "Sub Caste" to 1, "Party" to 1, "Others" to 1,
+            // "Caste" carries the main caste on line one and the sub caste on line two,
+            // so the office sees both without hunting across columns. "Party" stays in its
+            // own box, and "Others" stays empty for the office to write in.
+            "Caste" to 1, "Party" to 1, "Others" to 1,
         )
         var leaf = 0
         for ((label, span) in heads) {
@@ -404,9 +403,9 @@ object PdfExporter {
      * The cells are centred as the template centres them, with two exceptions, both of them
      * deliberate departures from the template because the surveyor asked for them.
      *
-     * "Sub Caste" is flush left. The template sets that box left-aligned (`w:jc` is absent)
-     * and it is the longest value in the row's last three boxes, so left is also what makes
-     * the column read as a list rather than a ragged centre.
+     * "Caste" and "Sub Caste" share the same box, one above the other, both flush left --
+     * the template sets that box left-aligned (`w:jc` is absent) and left is what makes a
+     * two-line cell read as a list rather than a ragged centre.
      *
      * "Full Name" is centred in the blank template because there is nothing in it yet. With
      * thirty Telugu names down the column, centring makes every name start at a different
@@ -427,10 +426,11 @@ object PdfExporter {
         val digits = v.phone.filter { it.isDigit() }.take(PHONE_DIGITS).padEnd(PHONE_DIGITS)
         for (i in 0 until PHONE_DIGITS) at(C_PHONE + i, digits[i].toString())
         at(C_ADDR, v.address)
-        // Sub caste, then party, then nothing. The party goes in the party box rather than
-        // the caste's old one: the office counts parties, and a value in the wrong box is
-        // worse than an empty box, because it reads as verified.
-        at(C_SUBCASTE, v.subCaste, Align.LEFT)
+        // Caste on line one, sub caste on line two, in the same box -- so the office sees
+        // both without hunting. Party goes in its own box; Others stays empty.
+        val halfH = ROW_H / 2f
+        drawCell(c, v.caste, TABLE_X + offset(C_SUBCASTE), COL_PT[C_SUBCASTE], y, halfH, p, DATA_PT, Align.LEFT)
+        drawCell(c, v.subCaste, TABLE_X + offset(C_SUBCASTE), COL_PT[C_SUBCASTE], y + halfH, halfH, p, DATA_PT, Align.LEFT)
         at(C_PARTY, v.party)
     }
 
