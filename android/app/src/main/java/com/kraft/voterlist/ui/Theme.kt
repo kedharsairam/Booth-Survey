@@ -2,6 +2,7 @@ package com.kraft.voterlist.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -44,13 +45,13 @@ import com.kraft.ui.tokens.KraftSpacing
  * Spacing stays on the 8px rhythm from Kraft standards.
  */
 
-private val MangaPaper = Color(0xFFFDFFE3)   // background — cream like manga pages
-private val MangaWhite = Color(0xFFFFFFFF)   // surface — panel fill
-private val MangaInk = Color(0xFF14191C)     // borders + primary text — near black
-private val MangaGreen = Color(0xFF1B5E20)   // accent — matches the app icon
-private val MangaGreenSoft = Color(0xFFE8F5E9) // accent container — light green fill
-private val MangaMuted = Color(0xFF4C5A61)   // secondary text — readable but quiet
-private val MangaBorder = Color(0xFF14191C)  // panel outlines — thick, visible
+internal val MangaPaper = Color(0xFFFDFFE3)   // background — cream like manga pages
+internal val MangaWhite = Color(0xFFFFFFFF)   // surface — panel fill
+internal val MangaInk = Color(0xFF14191C)     // borders + primary text — near black
+internal val MangaGreen = Color(0xFF1B5E20)   // accent — matches the app icon
+internal val MangaGreenSoft = Color(0xFFE8F5E9) // accent container — light green fill
+internal val MangaMuted = Color(0xFF4C5A61)   // secondary text — readable but quiet
+internal val MangaBorder = Color(0xFF14191C)  // panel outlines — thick, visible
 
 /** Status colours — kept separate from Material roles, one meaning each. */
 @Immutable
@@ -223,6 +224,3 @@ fun KraftTheme(
 
 /** Border width for manga panels — thicker than hairline so it survives daylight. */
 val MangaBorderWidth = KraftSpacing.Spacing2
-
-/** Panel elevation — subtle lift so panels read as separate objects on the page. */
-val MangaPanelElevation = KraftSpacing.Spacing2

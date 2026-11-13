@@ -450,8 +450,9 @@ private fun FamilyCard(
     // the card has to know where its own buttons are, so that a hold landing on an arrow
     // does not also read as a hold on the card. Row-local coordinates, the same frame the
     // gesture reports its touch in.
-    var arrowBox by remember { mutableStateOf<Rect?>(null) }
-    val onArrow: (Offset) -> Boolean = { p -> arrowBox?.contains(p) == true }
+    //
+    // With cardHandle now on the grab handle only, the card body never intercepts drag
+    // gestures, so arrowBox/onArrow are no longer needed -- the handle is its own control.
 
     // Outlined, not elevated: this screen is read outdoors, where shadows wash out and a
     // ledger line around each card survives the sun.
@@ -470,8 +471,8 @@ private fun FamilyCard(
                 scaleY = lift * pressScale
             }
             .then(drag.trackHeight(fwm.family.id))
-            // Reports touch-down on the card itself, now that the card is the handle.
-            .then(drag.pressable(fwm.family.id))
+            // cardHandle now lives only on the grab handle below -- the card body scrolls
+            // normally, and only the handle lifts a card for reorder.
             .combinedClickable(
                 role = Role.Button,
                 onClick = {
@@ -489,24 +490,6 @@ private fun FamilyCard(
                 // alone, which is the only place that can tell a hold-that-selects from a
                 // hold-that-drags. Leaving it out also means a tap still opens the card.
                 onLongClick = null,
-            )
-            .then(
-                drag.cardHandle(
-                    id = fwm.family.id,
-                    list = listState,
-                    // The whole list length, so a drop past either end clamps instead of
-                    // being asked for a slot that is not there.
-                    itemCount = total,
-                    // The destination, not a step. This is what makes a ward with two hundred
-                    // families on the screen reorderable at all -- the old drag moved one
-                    // place per row-height of travel, so a card could only crawl.
-                    onMoveTo = { to -> onMoveTo(fwm.family.id, to) },
-                    // Not onSelect: the hold arms the drag and must not also tick. Ticking
-                    // has its own control on the card now, so there is no reason for one
-                    // gesture to mean two things.
-                    onSelect = {},
-                    isControl = onArrow,
-                )
             )
             // One summary for the card, and the actions it hides offered back by name.
             //
@@ -564,6 +547,32 @@ private fun FamilyCard(
         // while the controls sat in a band of their own.
         Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Grab handle: long-press here to reorder. The card body scrolls normally --
+                // only the handle lifts a card for drag. This keeps scrolling and reordering
+                // on separate gestures, so a thumb sliding down the list never starts a move.
+                Box(
+                    modifier = Modifier
+                        .size(BoothMetrics.TouchTarget)
+                        .then(drag.pressable(fwm.family.id))
+                        .then(
+                            drag.cardHandle(
+                                id = fwm.family.id,
+                                list = listState,
+                                itemCount = total,
+                                onMoveTo = { to -> onMoveTo(fwm.family.id, to) },
+                                onSelect = {},
+                            )
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.DragHandle,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(KraftSpacing.Spacing24),
+                    )
+                }
+
                 TwoLineRow(
                     number = (index + 1).toString(),
                     name = fwm.label.ifBlank { "Unnamed family" },
@@ -611,13 +620,6 @@ private fun FamilyCard(
                         Box(
                             modifier = Modifier
                                 .size(BoothMetrics.TouchTarget)
-                                .onGloballyPositioned {
-                                    val p = it.positionInParent()
-                                    arrowBox = Rect(
-                                        p,
-                                        p + Offset(it.size.width.toFloat(), it.size.height.toFloat()),
-                                    )
-                                }
                                 .toggleable(
                                     value = ticked,
                                     role = Role.Checkbox,

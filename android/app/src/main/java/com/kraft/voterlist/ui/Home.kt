@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -104,27 +105,11 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
             return@Column
         }
         run {
-            OutlinedTextField(
+            MangaField(
                 value = s.query,
                 onValueChange = vm::setQuery,
+                label = "Search anyone",
                 modifier = Modifier.fillMaxWidth().padding(top = Space.md),
-                placeholder = { Text("Search anyone", style = MaterialTheme.typography.bodyLarge) },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                // A way out that is one tap. Without it the only route back to the day's
-                // list was to select the whole line and delete it, which needs two hands on
-                // a phone held in one. OutlinedTextField gives trailingIcon the default
-                // 48dp button, which is left as it is -- a smaller X here is a miss.
-                trailingIcon = {
-                    if (s.query.isNotBlank()) {
-                        IconButton(onClick = { vm.setQuery("") }) {
-                            Icon(Icons.Default.Close, "Clear search")
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
             )
 
             if (s.query.isNotBlank()) {
@@ -142,12 +127,8 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                 // screen -- "New family" and "New voter" ended up below the fold and
                 // unreachable. weight(1f) is wrong for the same reason in the other
                 // direction: in landscape "whatever is left over" was nothing.
-                Card(
+                MangaPanel(
                     Modifier.fillMaxWidth().heightIn(min = BoothMetrics.HomeCardMin),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ),
-                    shape = MaterialTheme.shapes.large,
                 ) {
                     Column(
                         Modifier.padding(Space.lg),
@@ -213,12 +194,8 @@ fun HomeScreen(vm: SurveyViewModel, s: UiState) {
                 }
                 if (s.notInFileCount > 0) {
                     Spacer(Modifier.height(Space.md))
-                    Card(
+                    MangaPanel(
                         Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Column(Modifier.padding(Space.lg)) {
                             Text(
@@ -354,14 +331,12 @@ internal fun CountTile(
     label: String,
     accent: androidx.compose.ui.graphics.Color,
 ) {
-    Card(
+    MangaPanel(
         // clearAndSetSemantics, not semantics(mergeDescendants = true): merging left the
         // two child Texts in the tree as stops of their own, so a screen reader said
         // "12 to visit" and then "12" and then "to visit". This sets the label once and
         // drops the children, which is what the card is for.
         modifier.clearAndSetSemantics { contentDescription = "$big $label" },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        shape = MaterialTheme.shapes.medium,
     ) {
         Column(Modifier.padding(Space.md)) {
             // One line, and it steps down rather than wrapping. At a large font size a
@@ -417,11 +392,8 @@ internal fun ActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = KraftSpacing.Spacing64),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = MaterialTheme.shapes.large,
+    MangaPanel(
+        modifier = modifier.heightIn(min = KraftSpacing.Spacing64).clickable(onClick = onClick),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
