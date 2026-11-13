@@ -23,53 +23,36 @@ import com.kraft.ui.tokens.KraftRadius
 import com.kraft.ui.tokens.KraftSpacing
 
 /**
- * The app's design language.
+ * Komi Store manga theme — thick panel borders, cream paper, green accent.
  *
- * Three things drove the choices, and they are all the same thing: this is read outdoors, on a
- * cheap phone, by somebody who is holding a phone up to a stranger at a door.
+ * Designed for a 70-year-old using this outdoors at a doorstep:
  *
- * **Contrast over subtlety.** Every text colour here clears 4.5:1 against the surface it sits
- * on. A grey that looks elegant on a desk disappears in sunlight. The status colours are dark
- * enough to read rather than bright enough to look like a toy.
+ * **Boundaries first.** Every card, button, field and row gets a thick black
+ * border so nothing floats without an edge. The old theme's hairlines vanish in
+ * daylight; manga panels don't.
  *
- * **Size over density.** Body text starts at 16sp and the roster rows are roomy. A crowded
- * screen is a screen somebody misreads, and a misread voter ID is a survey that goes to the
- * wrong house.
+ * **Cream paper, not stark white.** Background is #FDF6E3 — manga paper, easier
+ * on aging eyes than pure white, still high contrast with black text and borders.
  *
- * **One accent, used sparingly.** The teal marks what is actionable. Green, amber and red mean
- * exactly one thing each and appear nowhere else, so a colour on screen is information rather
- * than decoration.
+ * **Green accent (#1B5E20).** Matches the app icon. Used only for actionable
+ * elements — filled buttons, toggles on, the active tab. Nothing else is green,
+ * so a green thing on screen means "tap this."
  *
- * Spacing is on an 8px rhythm with a 4px half-step, per the Kraft standards. Nothing is placed
- * at a distance that is not in [Space], which is what makes two screens built separately still
- * look like one app.
+ * **Bold typography.** Headings are heavy and large; body stays at 16sp minimum.
+ * Text is black on cream, never gray on gray.
+ *
+ * Spacing stays on the 8px rhythm from Kraft standards.
  */
 
-private val Ink = Color(0xFF14191C)
-private val Teal = Color(0xFF0B5566)
-private val TealDark = Color(0xFF6FD3E8)
-private val Paper = Color(0xFFF7F9FA)
-private val Card = Color(0xFFFFFFFF)
-private val Muted = Color(0xFFE9EEF1)
-/**
- * Card outlines and field borders.
- *
- * Was #C2CCD2, which measures 1.55:1 against Paper and 1.63:1 against Card -- well under
- * the 3:1 that WCAG asks of any boundary doing real work, and under it in a way that only
- * shows up outside. A card whose edge has faded into the background is no longer a card;
- * on a bright day the family list stops being a list of separate households and becomes one
- * block of text with gaps in it.
- *
- * #78868E measures 3.55:1 on Paper, 3.75:1 on Card and 3.21:1 on the muted fill chips sit
- * on, so it clears the bar on every surface this app actually draws it against. It is
- * darker than the brief would suggest indoors, and that is the trade being made on purpose:
- * the indoor cost is a slightly heavier line, the outdoor cost of the old one was not being
- * able to see where a household ended.
- */
-private val Line = Color(0xFF78868E)
-private val MutedInk = Color(0xFF4C5A61)
+private val MangaPaper = Color(0xFFFDFFE3)   // background — cream like manga pages
+private val MangaWhite = Color(0xFFFFFFFF)   // surface — panel fill
+private val MangaInk = Color(0xFF14191C)     // borders + primary text — near black
+private val MangaGreen = Color(0xFF1B5E20)   // accent — matches the app icon
+private val MangaGreenSoft = Color(0xFFE8F5E9) // accent container — light green fill
+private val MangaMuted = Color(0xFF4C5A61)   // secondary text — readable but quiet
+private val MangaBorder = Color(0xFF14191C)  // panel outlines — thick, visible
 
-/** Status colours, kept apart from the Material roles because they mean one thing each. */
+/** Status colours — kept separate from Material roles, one meaning each. */
 @Immutable
 data class StatusColours(
     val done: Color,
@@ -109,8 +92,6 @@ object Status {
 }
 
 object Space {
-    /** No inset. Named rather than 0.dp so the no-raw-dp rule can tell an intentional
-     * zero from a value somebody typed at the call site. */
     val none: androidx.compose.ui.unit.Dp @Composable get() = androidx.compose.ui.unit.Dp(0f)
     val xs: androidx.compose.ui.unit.Dp @Composable get() = LocalSpace.current.xs
     val sm: androidx.compose.ui.unit.Dp @Composable get() = LocalSpace.current.sm
@@ -121,77 +102,66 @@ object Space {
     val huge: androidx.compose.ui.unit.Dp @Composable get() = LocalSpace.current.huge
 }
 
-/**
- * The type scale.
- *
- * Line height is set explicitly rather than left to the platform default, because the default
- * is tuned for Latin body copy at 14sp and this app runs larger text with longer Telugu
- * surnames in it.
- */
-private val AppType = Typography().run {
+/** Type scale — manga style: bold headings, readable body, no gray-on-gray. */
+private val MangaType = Typography().run {
     copy(
         displaySmall = displaySmall.copy(
-            fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold,
+            fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.ExtraBold,
             letterSpacing = (-1).sp,
         ),
         headlineSmall = headlineSmall.copy(
-            fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold,
+            fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.ExtraBold,
         ),
         titleLarge = titleLarge.copy(
-            fontSize = KraftTypeScale.Title3, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold,
+            fontSize = KraftTypeScale.Title3, lineHeight = 26.sp, fontWeight = FontWeight.Bold,
         ),
         titleMedium = titleMedium.copy(
-            fontSize = KraftTypeScale.Headline, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold,
+            fontSize = KraftTypeScale.Headline, lineHeight = 22.sp, fontWeight = FontWeight.Bold,
         ),
         titleSmall = titleSmall.copy(
-            fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+            fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp, fontWeight = FontWeight.Bold,
         ),
-        bodyLarge = bodyLarge.copy(fontSize = KraftTypeScale.Body, lineHeight = 23.sp),
-        bodyMedium = bodyMedium.copy(fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp),
+        bodyLarge = bodyLarge.copy(fontSize = KraftTypeScale.Body, lineHeight = 23.sp, fontWeight = FontWeight.Medium),
+        bodyMedium = bodyMedium.copy(fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
         bodySmall = bodySmall.copy(fontSize = KraftTypeScale.Footnote, lineHeight = 17.sp),
-        labelLarge = labelLarge.copy(fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+        labelLarge = labelLarge.copy(fontSize = KraftTypeScale.Subheadline, lineHeight = 20.sp, fontWeight = FontWeight.Bold),
         labelMedium = labelMedium.copy(fontSize = KraftTypeScale.Footnote, lineHeight = 16.sp),
         labelSmall = labelSmall.copy(fontSize = KraftTypeScale.Caption2, lineHeight = 14.sp, letterSpacing = 0.4.sp),
     )
 }
 
-private val AppShapes = Shapes(
+/** Panel shapes — slightly rounded corners for manga panels, never pill-shaped. */
+private val MangaShapes = Shapes(
     extraSmall = RoundedCornerShape(KraftRadius.Small),
-    small = RoundedCornerShape(KraftRadius.Small),
+    small = RoundedCornerShape(KraftRadius.Standard),
     medium = RoundedCornerShape(KraftRadius.Medium),
     large = RoundedCornerShape(KraftRadius.Hero),
     extraLarge = RoundedCornerShape(KraftRadius.Modal),
 )
 
 private val LightScheme = lightColorScheme(
-    primary = Teal,
+    primary = MangaGreen,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFCDE9F1),
-    onPrimaryContainer = Color(0xFF05323C),
-    secondary = Color(0xFF4A6572),
+    primaryContainer = MangaGreenSoft,
+    onPrimaryContainer = MangaGreen,
+    secondary = MangaInk,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDCE7EC),
-    onSecondaryContainer = Color(0xFF1B2C34),
-    tertiary = Color(0xFF6B5B2E),
+    secondaryContainer = MangaWhite,
+    onSecondaryContainer = MangaInk,
+    tertiary = MangaMuted,
     onTertiary = Color.White,
-    background = Paper,
-    onBackground = Ink,
-    surface = Card,
-    onSurface = Ink,
-    surfaceVariant = Muted,
-    onSurfaceVariant = MutedInk,
-    surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Color(0xFFFBFCFD),
-    surfaceContainer = Paper,
-    surfaceContainerHigh = Color(0xFFEFF3F5),
-    outline = Line,
-    // Dividers were Color(0xFFD9E0E4) and measured 1.26:1 on Paper. That is fine on a desk
-    // and gone in daylight: at a brightness where the body text is still comfortably
-    // readable, the line that tells him one person's row has ended and the next has begun
-    // has already disappeared, and a list of names becomes a wall. WCAG asks 3:1 for any
-    // boundary that carries meaning, and a row divider is exactly that. This clears it and
-    // stays lighter than [Line] so the card outline still reads as the stronger edge.
-    outlineVariant = Color(0xFF849198),
+    background = MangaPaper,
+    onBackground = MangaInk,
+    surface = MangaWhite,
+    onSurface = MangaInk,
+    surfaceVariant = MangaWhite,
+    onSurfaceVariant = MangaMuted,
+    surfaceContainerLowest = MangaWhite,
+    surfaceContainerLow = MangaWhite,
+    surfaceContainer = MangaPaper,
+    surfaceContainerHigh = MangaGreenSoft,
+    outline = MangaBorder,
+    outlineVariant = MangaBorder,
     error = Color(0xFFB3261E),
     onError = Color.White,
     errorContainer = Color(0xFFFCE8E6),
@@ -200,22 +170,24 @@ private val LightScheme = lightColorScheme(
 )
 
 private val DarkScheme = darkColorScheme(
-    primary = TealDark,
-    onPrimary = Color(0xFF00323D),
-    primaryContainer = Color(0xFF0B4A57),
-    onPrimaryContainer = Color(0xFFCDE9F1),
-    secondary = Color(0xFFB4CBD5),
-    onSecondary = Color(0xFF1E343D),
-    background = Color(0xFF0E1214),
-    onBackground = Color(0xFFE3E8EA),
-    surface = Color(0xFF141A1D),
-    onSurface = Color(0xFFE3E8EA),
-    surfaceVariant = Color(0xFF232C30),
-    onSurfaceVariant = Color(0xFFB9C4CA),
-    outline = Color(0xFF6C7A81),
-    // Same reason as the light scheme's divider. #333E43 on #141A1D is 1.34:1 -- the row
-    // edges were effectively absent in dark too.
-    outlineVariant = Color(0xFF5A676D),
+    primary = Color(0xFF4CAF50),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF1B5E20),
+    onPrimaryContainer = Color.White,
+    secondary = MangaMuted,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF2C3338),
+    onSecondaryContainer = MangaPaper,
+    tertiary = MangaMuted,
+    onTertiary = Color.White,
+    background = MangaInk,
+    onBackground = MangaPaper,
+    surface = Color(0xFF1E2326),
+    onSurface = MangaPaper,
+    surfaceVariant = Color(0xFF2C3338),
+    onSurfaceVariant = MangaPaper,
+    outline = MangaPaper,
+    outlineVariant = MangaPaper,
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
 )
@@ -225,8 +197,8 @@ fun KraftTheme(
     dark: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    // Dark mode is honoured rather than forced off. Somebody walking a street at dusk gets a
-    // screen they can actually read, and nobody has to remember a setting.
+    // Dark mode is honoured rather than forced off. Somebody walking a street at dusk gets
+    // a screen they can actually read, and nobody has to remember a setting.
     @Composable
     fun status() = if (dark) {
         StatusColours(
@@ -242,9 +214,15 @@ fun KraftTheme(
     CompositionLocalProvider(LocalStatus provides status()) {
         MaterialTheme(
             colorScheme = if (dark) DarkScheme else LightScheme,
-            typography = AppType,
-            shapes = AppShapes,
+            typography = MangaType,
+            shapes = MangaShapes,
             content = content,
         )
     }
 }
+
+/** Border width for manga panels — thicker than hairline so it survives daylight. */
+val MangaBorderWidth = 2.dp
+
+/** Panel elevation — subtle lift so panels read as separate objects on the page. */
+val MangaPanelElevation = 2.dp
