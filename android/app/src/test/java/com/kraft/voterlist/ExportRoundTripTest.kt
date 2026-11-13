@@ -312,7 +312,7 @@ class ExportRoundTripTest {
             serialsOf(exported(pending)),
         )
 
-        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(pending)), true).first
+        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(pending)), true, false).first
         val printed = pages.flatMap { page -> page.flatMap { r -> (r.from until r.to).map { r.block.members[it].serial } } }
         assertEquals(
             "the booklet must describe the same street as the spreadsheet",
@@ -356,7 +356,7 @@ class ExportRoundTripTest {
      */
     @Test
     fun `the booklet prints the arranged people once each, in order`() {
-        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(worked())), false).first
+        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(worked())), false, false).first
         val printed = pages.flatMap { page -> page.flatMap { r -> (r.from until r.to).map { r.block.members[it].serial } } }
 
         assertEquals(
@@ -406,7 +406,7 @@ class ExportRoundTripTest {
             )
         }.movingFamilyTo("fam5", 0)
 
-        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(big, Lists())), false).first
+        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(big, Lists())), false, false).first
         val onPaper = pages.flatMap { page ->
             page.flatMap { row -> (row.from until row.to).map { row.block.members[it] } }
         }

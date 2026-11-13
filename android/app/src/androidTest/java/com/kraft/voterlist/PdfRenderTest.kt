@@ -87,6 +87,7 @@ class PdfRenderTest {
                 os, PrintOrder.blocks(survey),
                 PdfExporter.Options(
                     mandal = "Palakollu", townWard = "Palakollu", boothNo = "108",
+                    onlyFamilies = false,
                 ),
             )
         }

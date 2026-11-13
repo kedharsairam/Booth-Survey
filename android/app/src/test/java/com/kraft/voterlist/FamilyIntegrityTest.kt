@@ -312,7 +312,7 @@ class FamilyIntegrityTest {
         )
             .movingFamilyTo("f2", 0)
 
-        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(b, Lists())), false).first
+        val pages = PdfExporter.layout(PrintOrder.blocks(Survey(b, Lists())), false, false).first
         val printed = pages.flatMap { page ->
             page.flatMap { row -> (row.from until row.to).map { row.block.members[it].id } }
         }

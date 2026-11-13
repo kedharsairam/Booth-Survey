@@ -80,7 +80,7 @@ object PdfExporter {
     private val ROW2_H = 42.50f
     private val ROW_H = 28.35f
     private const val ROWS_PER_PAGE = 15
-    private const val PAGES_PER_BOOKLET = 4
+    private const val PAGES_PER_BOOKLET = 8
 
     // ---- the form's type sizes --------------------------------------------------------
 
@@ -133,6 +133,7 @@ object PdfExporter {
         val townWard: String = "",
         val boothNo: String = "",
         val onlyPending: Boolean = false,
+        val onlyFamilies: Boolean = false,
     )
 
     /**
@@ -169,6 +170,7 @@ object PdfExporter {
     fun layout(
         blocks: List<PrintOrder.Block>,
         onlyPending: Boolean,
+        onlyFamilies: Boolean,
     ): Pair<List<List<Row>>, List<String>> {
         val pages = mutableListOf<MutableList<Row>>()
         val notes = mutableListOf<String>()
@@ -192,6 +194,9 @@ object PdfExporter {
 
         for (b in blocks) {
             if (b.members.isEmpty()) continue
+            // "Families only" drops anyone not in a family: solos and unassigned voters
+            // stay out of the sheet entirely.
+            if (onlyFamilies && b.familyId == null) continue
             // "Still to visit" skips a block only when every single member is done. A house
             // where one of four has been surveyed still has three people standing behind it,
             // and dropping it would quietly shorten the day's work.
@@ -259,7 +264,7 @@ object PdfExporter {
     fun printedRows(page: List<Row>): Int = page.sumOf { it.to - it.from }
 
     fun write(out: OutputStream, blocks: List<PrintOrder.Block>, opts: Options = Options()) {
-        val (pages, _) = layout(blocks, opts.onlyPending)
+        val (pages, _) = layout(blocks, opts.onlyPending, opts.onlyFamilies)
         android.util.Log.i("VoterSurvey", "booklet: ${blocks.size} blocks -> ${pages.size} pages")
         val doc = PdfDocument()
 

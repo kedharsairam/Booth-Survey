@@ -239,14 +239,12 @@ private val vm: SurveyViewModel by viewModels()
                     }
                 },
                 onPickImportFile = { pickImport.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv", "text/comma-separated-values", "application/octet-stream")) },
-                onExportXlsx = { onlyPending ->
+                onExportXlsx = { onlyPending, onlyFamilies ->
                     val stamp = stamp()
                     handOver("survey-${boothFileName()}-$stamp.xlsx") { out ->
                         val booth = vm.activeBooth()
                         XlsxExporter.write(
                             out,
-                            // Same function the booklet uses, so one checkbox cannot mean
-                            // two different sets of people. See Booth.forPendingOnly.
                             if (onlyPending) booth.forPendingOnly() else booth,
                             vm.activeLists(),
                         )
@@ -256,7 +254,7 @@ private val vm: SurveyViewModel by viewModels()
                 // measurements. The pending filter is applied to the blocks rather than to
                 // the voters, so a household keeps printing whole -- dropping the house
                 // because one of its four people is done would quietly shorten the day.
-                onExportPdf = { onlyPending ->
+                onExportPdf = { onlyPending, onlyFamilies ->
                     val stamp = stamp()
                     handOver("booklet-${boothFileName()}-$stamp.pdf") { out ->
                         val booth = vm.activeBooth()
@@ -268,6 +266,7 @@ private val vm: SurveyViewModel by viewModels()
                                 townWard = booth.townWard,
                                 boothNo = booth.boothNo,
                                 onlyPending = onlyPending,
+                                onlyFamilies = onlyFamilies,
                             ),
                         )
                     }

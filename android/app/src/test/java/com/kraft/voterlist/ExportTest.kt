@@ -285,7 +285,7 @@ class ExportTest {
         ),
     )
 
-    private fun pagesOf(sizes: List<Int>) = PdfExporter.layout(PrintOrder.blocks(houses(sizes)), false).first
+    private fun pagesOf(sizes: List<Int>) = PdfExporter.layout(PrintOrder.blocks(houses(sizes)), false, false).first
 
     /** The "Family sr.no." printed against each voter, in print order. */
     private fun serialsOf(sizes: List<Int>) =
@@ -341,19 +341,16 @@ class ExportTest {
     /**
      * A household is never split across two booklets.
      *
-     * This is the case the rule exists for: fifty-seven people leave three rows on page 4 --
-     * the booklet's last page -- and a four-person house arrives. Printing three of them there
-     * and one in the next stapled book is what the earlier version did, and it puts a single
-     * house in two booklets, which is the one thing a stapled booklet exists to prevent.
+     * This is the case the rule exists for: page 8 of a booklet is the last chance, and a
+     * family that will not fit in what is left moves whole to page 1 of the next booklet --
+     * it is never torn across two stapled books.
      */
     @Test
     fun `a house is never split across two booklets`() {
-        val pages = pagesOf(listOf(57, 4))
-        assertEquals(
-            "57 people need four pages", 57, pages.take(4).sumOf { PdfExporter.printedRows(it) },
-        )
-        assertEquals("page 4 gives up its three spare rows", 12, PdfExporter.printedRows(pages[3]))
-        assertEquals("the next booklet starts the whole house", 4, PdfExporter.printedRows(pages[4]))
+        val pages = pagesOf(listOf(105, 13, 4))
+        assertEquals("nine pages", 9, pages.size)
+        assertEquals("page 8 holds thirteen rows", 13, PdfExporter.printedRows(pages[7]))
+        assertEquals("the whole family starts page 1 of the next booklet", 4, PdfExporter.printedRows(pages[8]))
     }
 
     /**

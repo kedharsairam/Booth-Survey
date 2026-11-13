@@ -109,8 +109,8 @@ fun SurveyApp(
     pendingRestore: Triple<String, String, Int>?,
     onApplyRestore: () -> Unit,
     onCancelRestore: () -> Unit,
-    onExportXlsx: (Boolean) -> Unit,
-    onExportPdf: (Boolean) -> Unit,
+    onExportXlsx: (Boolean, Boolean) -> Unit,
+    onExportPdf: (Boolean, Boolean) -> Unit,
 ) {
     val s by vm.state.collectAsState()
     // He comes back to where he was. The tab is read from the saved session rather than

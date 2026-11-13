@@ -31,11 +31,12 @@ fun ExportSheet(
     vm: SurveyViewModel,
     s: UiState,
     busy: Boolean,
-    onExportXlsx: (Boolean) -> Unit,
-    onExportPdf: (Boolean) -> Unit,
+    onExportXlsx: (Boolean, Boolean) -> Unit,
+    onExportPdf: (Boolean, Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
     var onlyPending by remember { mutableStateOf(false) }
+    var onlyFamilies by remember { mutableStateOf(false) }
     val pending = s.totalCount - s.doneCount
 
     ModalBottomSheet(onDismissRequest = onClose) {
@@ -88,12 +89,37 @@ fun ExportSheet(
 
             Spacer(Modifier.height(KraftSpacing.Spacing12))
 
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = BoothMetrics.TouchTarget)
+                    .toggleable(
+                        value = onlyFamilies,
+                        role = androidx.compose.ui.semantics.Role.Checkbox,
+                        onValueChange = { onlyFamilies = it },
+                    )
+                    .semantics(mergeDescendants = true) {},
+            ) {
+                Checkbox(checked = onlyFamilies, onCheckedChange = null)
+                Column(Modifier.padding(start = Space.md)) {
+                    Text("Families only", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Only people who are in a family. Anyone not in a family stays out.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(KraftSpacing.Spacing12))
+
             // Filled, because this is the one that goes to the printer: the booklet is the
             // artefact the survey exists to produce, and the spreadsheet is what you open
             // afterwards to check it. Both offered, because they answer different questions
             // and picking only one would be the app deciding that for him.
             Button(
-                onClick = { onExportPdf(onlyPending); onClose() },
+                onClick = { onExportPdf(onlyPending, onlyFamilies); onClose() },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -107,14 +133,14 @@ fun ExportSheet(
                 // unexplained names in one sentence, none of which told him what lands on
                 // the paper. The thing he wants to know is that it lines up with the form
                 // he is already writing on.
-                "15 forms to a sheet, 4 sheets in a booklet. The boxes are the same as the " +
+                "15 forms to a sheet, 8 sheets in a booklet. The boxes are the same as the " +
                     "printed form you already have, so either one can be filled in.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(Modifier.height(KraftSpacing.Spacing12))
             OutlinedButton(
-                onClick = { onExportXlsx(onlyPending); onClose() },
+                onClick = { onExportXlsx(onlyPending, onlyFamilies); onClose() },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
