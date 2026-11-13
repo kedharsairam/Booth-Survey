@@ -522,7 +522,7 @@ private fun BoothBar(
                             Box(Modifier.weight(1f)) {
                                 if (query.isEmpty()) {
                                     Text(
-                                        if (tab == Tab.VOTERS) "Search anyone" else "Search families",
+                                        if (tab == Tab.VOTERS) "Search anyone" else "Search families or voters",
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,

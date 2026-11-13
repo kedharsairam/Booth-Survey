@@ -260,15 +260,21 @@ data class UiState(
         serial > 0 && serial in repeatedSerials
 
     /**
-     * Families matching the family search, in walking order. Matches the label
-     * or any member's name, so finding a house works from either end.
+     * Families matching the family search, in walking order. Matches the label,
+     * any member's name, voter ID, phone number, or house number -- any person
+     * in the family can be the hook that finds the whole house.
      */
     val visibleFamilies: List<FamilyWithMembers>
         get() {
             val q = familyQuery.trim()
             if (q.isEmpty()) return familiesWithMembers
             return familiesWithMembers.filter { fwm ->
-                fwm.label.matchesLoose(q) || fwm.members.any { it.name.matchesLoose(q) }
+                fwm.label.matchesLoose(q) || fwm.members.any { m ->
+                    m.name.matchesLoose(q) ||
+                        m.voterId.matchesLoose(q) ||
+                        m.phone.matchesLoose(q) ||
+                        m.house.matchesLoose(q)
+                }
             }
         }
 
