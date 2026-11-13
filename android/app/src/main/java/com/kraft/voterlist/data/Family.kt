@@ -474,7 +474,7 @@ data class Lists(
          * office with "SC/ST" in it has to be split by hand afterwards. If that is not
          * wanted, make them two entries here and nothing else changes.
          */
-        val DEFAULT_CASTES = listOf("OC", "BC", "SC/ST")
+        val DEFAULT_CASTES = listOf("OC", "BC", "SC", "ST")
 
         /**
          * The parties worth one tap. "Unknown" is in the list on purpose: at the door, not
@@ -484,28 +484,39 @@ data class Lists(
         val DEFAULT_PARTIES = listOf("TDP", "JSP", "BJP", "YSRCP", "Unknown")
 
         /**
-         * The sub castes, as his father gave them.
+         * The sub castes, grouped by caste because the dropdown can only offer a sub caste
+         * that belongs to the caste above it -- a single flat list was what let an OC be
+         * recorded against a BC-A sub caste with nothing on screen saying so.
          *
-         * Grouped by caste because the dropdown can only offer a sub caste that belongs to
-         * the caste above it -- a single flat list was what let an OC be recorded against a
-         * BC-A sub caste with nothing on screen saying so.
+         * SC and ST are separate castes (not the combined "SC/ST" of the old default), each
+         * with its own sub caste group. Spellings follow the Andhra Pradesh Backward Classes
+         * welfare lists: G.O.Ms.No.1793 (1970), G.O.Ms.No.25 (2023), and the 2025 SC
+         * sub-classification order.
          *
-         * **No SC/ST entry, because there are none.** The roll has ST households in it and
-         * this ward's survey does not ask for their sub caste; an empty group is left for
-         * one rather than inventing values. The panel is still offered in Settings so that
-         * adding one later needs no code change.
+         * Alphabetic within each group. "Others" is the catch-all for anything not listed --
+         * a catch-all at the bottom is the other convention and is a one-line change if it
+         * is preferred.
          *
-         * Alphabetic, as asked. Note "Others" therefore sits in the middle rather than at
-         * the end -- a catch-all at the bottom is the other convention and is a one-line
-         * change if it is preferred.
+         * Corrections from the older default: "Minority" removed (not a caste), Madiga/Mala
+         * Dasari/Relli moved from ST to SC, Palli moved from ST to BC-A, Nayabrahmana moved
+         * from generic BC to BC-A, Toorpukapu/Vaddilu/Yadavulu/Velama assigned to their
+         * correct BC sub-group spellings. "Srisaina" → "Srisayana", "Telukula" → "Telikula",
+         * "Karnibathulu" → "Karnabakthulu", "Vivabrahmana" → "Viswabrahmin", "Maladasari" →
+         * "Mala Dasari", "Aarya Vaysya" → "Arya Vysya".
          */
         val DEFAULT_SUBCASTES: Map<String, List<String>> = mapOf(
             "OC" to listOf(
-                "Aarya Vaysya", "Brahmin", "Kapu", "Kshatriya", "Muslim", "Others", "Reddy",
+                "Arya Vysya", "Brahmin", "Kamma", "Kapu", "Kshatriya", "Reddy", "Others",
             ),
             "BC" to listOf(
-                "Devanga", "Kammari", "Karnibathulu", "Naya Bhrammana", "Others",
-                "Padmasali", "Pallilu", "Rajika", "Segidi", "Vaddilu", "Visva Bhrammana",
+                "Devanga", "Goud", "Karnabakthulu", "Padmasali", "Salivahana", "Segidi",
+                "Settibalija", "Telikula", "Viswabrahmin", "Others",
+            ),
+            "SC" to listOf(
+                "Mala", "Mala Dasari", "Madiga", "Relli", "Others",
+            ),
+            "ST" to listOf(
+                "Yerukula", "Others",
             ),
         )
 
