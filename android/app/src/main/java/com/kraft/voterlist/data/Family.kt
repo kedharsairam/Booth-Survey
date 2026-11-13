@@ -446,6 +446,25 @@ data class Lists(
     }
 
     /**
+     * Renames one sub caste within [caste]'s group, case-insensitively.
+     *
+     * Voters who had the old sub caste keep their voter records -- only the sub caste
+     * string changes on them. Returns [this] unchanged if [oldName] is not found or
+     * [newName] is blank.
+     */
+    fun renameSubCaste(caste: String, oldName: String, newName: String): Lists {
+        val key = caste.trim()
+        val trimmedNew = newName.trim()
+        if (trimmedNew.isEmpty()) return this
+        val group = subCastes.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value.orEmpty()
+        val index = group.indexOfFirst { it.equals(oldName, ignoreCase = true) }
+        if (index < 0) return this
+        val updated = group.toMutableList().apply { set(index, trimmedNew) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.trim() })
+        return withSubCaste(key, updated)
+    }
+
+    /**
      * The four vocabularies, one per free-text column the form gives.
      *
      * Sub caste is here because the form has its own column for it, so a person has two

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileUpload
@@ -321,6 +322,8 @@ private fun ListEditor(
     var adding by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
     var removing by remember { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf<String?>(null) }
+    var editText by remember { mutableStateOf("") }
     val values = if (parentCaste != null) s.lists.subCasteGroup(parentCaste) else s.lists.forKind(kind)
     val title = if (parentCaste != null) "${kind.title} · $parentCaste" else kind.title
 
@@ -432,6 +435,14 @@ private fun ListEditor(
                                 modifier = Modifier.size(KraftSpacing.Spacing20),
                             )
                         }
+                        IconButton(onClick = { editing = value; editText = value }, modifier = Modifier.size(BoothMetrics.TouchTarget)) {
+                            Icon(
+                                Icons.Default.Edit,
+                                "Rename $value",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(KraftSpacing.Spacing20),
+                            )
+                        }
                     }
                     if (i != values.lastIndex) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -440,7 +451,46 @@ private fun ListEditor(
             }
 
             Spacer(Modifier.height(Space.sm))
-            if (adding) {
+            if (editing != null) {
+                val oldValue = editing!!
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = editText,
+                        onValueChange = { editText = it },
+                        label = { Text("Rename '$oldValue' to") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.medium,
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.width(Space.sm))
+                    IconButton(
+                        onClick = {
+                            vm.renameListValue(kind, oldValue, editText, parentCaste)
+                            editing = null; editText = ""
+                        },
+                        enabled = editText.isNotBlank(),
+                        modifier = Modifier.size(KraftSpacing.Spacing48),
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            "Save rename",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Spacer(Modifier.width(Space.md))
+                    IconButton(
+                        onClick = { editing = null; editText = "" },
+                        modifier = Modifier.size(KraftSpacing.Spacing48),
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            "Cancel rename",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else if (adding) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = text,

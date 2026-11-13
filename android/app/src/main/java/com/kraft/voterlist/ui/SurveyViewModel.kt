@@ -1483,6 +1483,29 @@ class SurveyViewModel @JvmOverloads constructor(
         }
     }
 
+    /** Renames one sub caste entry, on the list and on every voter who has it. */
+    fun renameListValue(kind: Lists.Kind, oldValue: String, newValue: String, parentCaste: String? = null) {
+        if (kind != Lists.Kind.SUBCASTE) return
+        val v = newValue.trim()
+        if (v.isEmpty()) return
+        val lists = _state.value.lists
+        val booth = _state.value.booth
+        val caste = parentCaste ?: SubCaste.UNPARENTED
+        val group = lists.subCasteGroup(caste)
+        if (!group.any { it.equals(oldValue, ignoreCase = true) }) return
+        if (group.any { it.equals(v, ignoreCase = true) }) {
+            say("$v is already on the $caste list"); return
+        }
+        val renamed = booth.copy(voters = booth.voters.map {
+            if (it.subCaste.equals(oldValue, true)) it.copy(subCaste = v) else it
+        })
+        viewModelScope.launch {
+            saveBooth(renamed)
+            val next = lists.renameSubCaste(caste, oldValue, v)
+            commitLists(next)
+        }
+    }
+
     fun countWith(kind: Lists.Kind, value: String): Int = _state.value.voters.count {
         when (kind) {
             Lists.Kind.CASTE -> it.caste.equals(value, true)
