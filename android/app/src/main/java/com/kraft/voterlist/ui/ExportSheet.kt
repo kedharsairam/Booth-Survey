@@ -1,7 +1,10 @@
 package com.kraft.voterlist.ui
 
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -13,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.kraft.ui.tokens.KraftSpacing
+import com.kraft.voterlist.export.PdfExporter
 
 /**
  * Offers the export.
@@ -32,11 +36,24 @@ fun ExportSheet(
     s: UiState,
     busy: Boolean,
     onExportXlsx: (Boolean, Boolean) -> Unit,
-    onExportPdf: (Boolean, Boolean) -> Unit,
+    onExportPdf: (Boolean, Boolean, Int) -> Unit,
     onClose: () -> Unit,
 ) {
     var onlyPending by remember { mutableStateOf(false) }
     var onlyFamilies by remember { mutableStateOf(false) }
+    // Kept as text so the field can be empty or half-typed while he edits it. The number is
+    // parsed on every change and the export button stays off until it is a whole number in
+    // range -- a half-typed value must never reach a government document.
+    var perBookletText by remember {
+        mutableStateOf(PdfExporter.DEFAULT_VOTERS_PER_BOOKLET.toString())
+    }
+    val perBooklet = perBookletText.toIntOrNull()
+    val perBookletError = when {
+        perBooklet == null -> "Enter a whole number."
+        perBooklet !in PdfExporter.MIN_VOTERS_PER_BOOKLET..PdfExporter.MAX_VOTERS_PER_BOOKLET ->
+            "Use a number from ${PdfExporter.MIN_VOTERS_PER_BOOKLET} to ${PdfExporter.MAX_VOTERS_PER_BOOKLET}."
+        else -> null
+    }
     val pending = s.totalCount - s.doneCount
 
     ModalBottomSheet(onDismissRequest = onClose) {
@@ -114,13 +131,44 @@ fun ExportSheet(
 
             Spacer(Modifier.height(KraftSpacing.Spacing12))
 
+            // The page count is not a setting buried in code. He decides at the point of
+            // printing how many people go in each booklet, and the pages follow from it:
+            // fifteen names to a page, so 50 means four pages and 150 means ten.
+            Text("Voters in each booklet", style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(KraftSpacing.Spacing6))
+            OutlinedTextField(
+                value = perBookletText,
+                onValueChange = { perBookletText = it },
+                singleLine = true,
+                isError = perBookletError != null,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(KraftSpacing.Spacing6))
+            Text(
+                when {
+                    perBookletError != null -> perBookletError
+                    perBooklet != null ->
+                        "That makes ${PdfExporter.pagesPerBooklet(perBooklet)} pages in each booklet."
+                    else -> ""
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (perBookletError == null) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.error,
+            )
+
+            Spacer(Modifier.height(KraftSpacing.Spacing12))
+
             // Filled, because this is the one that goes to the printer: the booklet is the
             // artefact the survey exists to produce, and the spreadsheet is what you open
             // afterwards to check it. Both offered, because they answer different questions
             // and picking only one would be the app deciding that for him.
             Button(
-                onClick = { onExportPdf(onlyPending, onlyFamilies); onClose() },
-                enabled = !busy,
+                onClick = { perBooklet?.let { onExportPdf(onlyPending, onlyFamilies, it) }; onClose() },
+                enabled = !busy && perBookletError == null && perBooklet != null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.PictureAsPdf, null)
@@ -133,8 +181,8 @@ fun ExportSheet(
                 // unexplained names in one sentence, none of which told him what lands on
                 // the paper. The thing he wants to know is that it lines up with the form
                 // he is already writing on.
-                "15 forms to a sheet, 8 sheets in a booklet. The boxes are the same as the " +
-                    "printed form you already have, so either one can be filled in.",
+                "Fifteen names fit on a page. The boxes are the same as the printed form " +
+                    "you already have, so either one can be filled in.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 

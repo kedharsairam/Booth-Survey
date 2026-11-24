@@ -38,7 +38,10 @@ to drag it into a different place in the walking order.
 
 **Print.** Settings → *Print the list* writes a spreadsheet and a paper booklet, both in
 walking order. The booklet is the artefact: one block per house, arranged the way you
-arranged it.
+arranged it. The print sheet asks how many voters go in each booklet — 108 by default,
+but any number from 1 to 1000. Fifteen names fit on a page, so the booklet grows to
+however many pages that number needs: 50 makes four pages, 150 makes ten. A household
+is never torn across two booklets, so one can end a little short.
 
 **Backup.** Settings → *Back up* writes a copy of everything whenever you ask. The app
 also takes one by itself into `Downloads/Booth Survey/` when the booth changes, keeping
@@ -76,19 +79,21 @@ needed for a debug build.
 ```sh
 cd android
 ./gradlew assembleDebug          # build
-./gradlew testDebugUnitTest      # 211 tests
+./gradlew testDebugUnitTest      # 216 tests
 ./gradlew lintDebug              # Android lint
 node ../tools/roll-check.py      # no roll data in the tree or in history
 ```
 
-A release build is signed from `android/keystore.properties`, which is gitignored. The
-build refuses to produce a shippable release without it.
+A release build is signed from `android/keystore.properties`, which is gitignored along
+with the `.jks` it names. If that file is missing, the build quietly falls back to the
+debug key — the APK then cannot be installed over a signed release. Read the build
+output before handing an APK to a surveyor.
 
 ---
 
 ## Tests
 
-211 JVM unit tests covering the parts where being wrong matters quietly: the import, the
+216 JVM unit tests covering the parts where being wrong matters quietly: the import, the
 export, the walking order, household grouping, and the on-disk format. The PDF and
 Compose UI are covered by instrumentation tests, run on a device.
 

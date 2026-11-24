@@ -254,7 +254,7 @@ private val vm: SurveyViewModel by viewModels()
                 // measurements. The pending filter is applied to the blocks rather than to
                 // the voters, so a household keeps printing whole -- dropping the house
                 // because one of its four people is done would quietly shorten the day.
-                onExportPdf = { onlyPending, onlyFamilies ->
+                onExportPdf = { onlyPending, onlyFamilies, votersPerBooklet ->
                     val stamp = stamp()
                     handOver("booklet-${boothFileName()}-$stamp.pdf") { out ->
                         val booth = vm.activeBooth()
@@ -267,6 +267,7 @@ private val vm: SurveyViewModel by viewModels()
                                 boothNo = booth.boothNo,
                                 onlyPending = onlyPending,
                                 onlyFamilies = onlyFamilies,
+                                votersPerBooklet = votersPerBooklet,
                             ),
                         )
                     }

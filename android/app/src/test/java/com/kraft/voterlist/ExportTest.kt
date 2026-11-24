@@ -285,7 +285,13 @@ class ExportTest {
         ),
     )
 
-    private fun pagesOf(sizes: List<Int>) = PdfExporter.layout(PrintOrder.blocks(houses(sizes)), false, false).first
+    private fun layoutOf(
+        sizes: List<Int>,
+        cap: Int = PdfExporter.DEFAULT_VOTERS_PER_BOOKLET,
+    ) = PdfExporter.layout(PrintOrder.blocks(houses(sizes)), PdfExporter.Options(votersPerBooklet = cap))
+
+    private fun pagesOf(sizes: List<Int>, cap: Int = PdfExporter.DEFAULT_VOTERS_PER_BOOKLET) =
+        layoutOf(sizes, cap).pages
 
     /** The "Family sr.no." printed against each voter, in print order. */
     private fun serialsOf(sizes: List<Int>) =
@@ -307,11 +313,11 @@ class ExportTest {
     }
 
     /**
-     * Pages 1 to 3 fill; only the booklet's fourth page protects a household.
+     * Pages inside a booklet fill straight through; only the fold protects a household.
      *
-     * Fifteen houses of four is sixty people, exactly one booklet, and those households do
-     * not divide into pages of fifteen. Refusing to split on every page would leave the
-     * booklet short, so a house runs on across pages 1 to 3.
+     * Fifteen houses of four is sixty people, not a multiple of fifteen-page rows, so a house
+     * runs on across pages instead of leaving gaps. The fold is wherever the requested voter
+     * count puts it, not at a fixed page number.
      */
     @Test
     fun `households run on across the first three pages of a booklet`() {
@@ -328,7 +334,7 @@ class ExportTest {
      * Forty-two people fill pages 1 and 2 and leave three rows on page 3. A four-person house
      * will not fit those three, and page 3 is not the booklet's last page, so it runs on --
      * three members on page 3 and the fourth on page 4. Both are in the same stapled booklet,
-     * so nothing has been torn across two books. This is what keeps the booklet at sixty.
+     * so nothing has been torn across two books and no rows are wasted mid-booklet.
      */
     @Test
     fun `a house runs on inside a booklet rather than leaving rows empty`() {
@@ -338,19 +344,36 @@ class ExportTest {
         assertEquals("the fourth member is on page 4", 1, PdfExporter.printedRows(pages[3]))
     }
 
+    /** Every household must print inside one booklet, however the pages fall. */
+    private fun assertNoFamilyCrossesBooklets(result: PdfExporter.LayoutResult) {
+        result.pages.forEachIndexed { i, page ->
+            page.forEach { row ->
+                val books = result.pages.indices
+                    .filter { j -> result.pages[j].any { it.block === row.block } }
+                    .map { result.bookletOfPage[it] }
+                    .toSet()
+                assertEquals("a household printed in booklets $books", 1, books.size)
+            }
+        }
+    }
+
     /**
      * A household is never split across two booklets.
      *
-     * This is the case the rule exists for: page 8 of a booklet is the last chance, and a
-     * family that will not fit in what is left moves whole to page 1 of the next booklet --
-     * it is never torn across two stapled books.
+     * At 108 the first seven pages fill exactly, leaving three rows. The thirteen-person
+     * house will not fit those three, so it moves whole to booklet 2. The four-person house
+     * then runs on inside booklet 2 -- allowed, because it never leaves that booklet. The
+     * page fills to fifteen, but no household is torn across the fold.
      */
     @Test
     fun `a house is never split across two booklets`() {
-        val pages = pagesOf(listOf(105, 13, 4))
-        assertEquals("nine pages", 9, pages.size)
-        assertEquals("page 8 holds thirteen rows", 13, PdfExporter.printedRows(pages[7]))
-        assertEquals("the whole family starts page 1 of the next booklet", 4, PdfExporter.printedRows(pages[8]))
+        val result = layoutOf(listOf(105, 13, 4), 108)
+        assertEquals(9, result.pages.size)
+        assertEquals(2, result.bookletOfPage[7])
+        assertEquals(2, result.bookletOfPage[8])
+        assertEquals(15, PdfExporter.printedRows(result.pages[7]))
+        assertEquals(2, PdfExporter.printedRows(result.pages[8]))
+        assertNoFamilyCrossesBooklets(result)
     }
 
     /**
@@ -371,6 +394,58 @@ class ExportTest {
         val pages = pagesOf(List(15) { 1 })
         assertEquals(1, pages.size)
         assertEquals(15, PdfExporter.printedRows(pages[0]))
+    }
+
+    /**
+     * The number chosen when printing sets the pages, not the other way round. The paper is
+     * fifteen rows to a page, so 50 voters is four pages, 108 is eight, 150 is ten.
+     */
+    @Test
+    fun `the requested count sets the number of pages`() {
+        assertEquals(4, PdfExporter.pagesPerBooklet(50))
+        assertEquals(8, PdfExporter.pagesPerBooklet(108))
+        assertEquals(10, PdfExporter.pagesPerBooklet(150))
+        assertEquals(4, pagesOf(List(50) { 1 }, 50).size)
+        assertEquals(10, pagesOf(List(150) { 1 }, 150).size)
+    }
+
+    /** However many he asks for, no booklet prints more people than that. */
+    @Test
+    fun `no booklet exceeds the requested count`() {
+        for (cap in listOf(50, 108, 150)) {
+            val result = layoutOf(List(120) { 1 }, cap)
+            result.bookletOfPage.indices.groupBy { result.bookletOfPage[it] }
+                .forEach { (book, pageIndexes) ->
+                    val printed = pageIndexes.sumOf { PdfExporter.printedRows(result.pages[it]) }
+                    assertTrue("cap $cap: booklet $book printed $printed", printed <= cap)
+                }
+        }
+    }
+
+    /** The thirteen-person household moves whole rather than being torn at the fold. */
+    @Test
+    fun `a household moves whole at a variable booklet boundary`() {
+        val result = layoutOf(listOf(105, 13, 4), 108)
+        val runs = result.pages.flatMap { it }.filter { it.block.size == 13 }
+        assertEquals(1, runs.size)
+        assertEquals(0, runs.single().from)
+        assertEquals(13, runs.single().to)
+        assertNoFamilyCrossesBooklets(result)
+    }
+
+    /** At 108 the eighth page fills to three rows. That gap is the point, not a defect. */
+    @Test
+    fun `the booklet page at the fold may be short on purpose`() {
+        val result = layoutOf(listOf(105, 3, 4), 108)
+        assertEquals(3, PdfExporter.printedRows(result.pages[7]))
+        assertEquals(1, result.bookletOfPage[7])
+        assertEquals(4, PdfExporter.printedRows(result.pages[8]))
+        assertEquals(2, result.bookletOfPage[8])
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a cap outside the safe range is rejected`() {
+        PdfExporter.Options(votersPerBooklet = 0)
     }
 
     private fun zipPart(bytes: ByteArray, name: String): String {

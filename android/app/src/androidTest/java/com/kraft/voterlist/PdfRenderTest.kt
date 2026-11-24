@@ -8,9 +8,12 @@ import com.kraft.voterlist.data.PrintOrder
 import com.kraft.voterlist.data.Survey
 import com.kraft.voterlist.data.Voter
 import com.kraft.voterlist.export.PdfExporter
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 
 /**
  * Writes a real booklet to a file the shell can pull, so the layout can be *looked at*.
@@ -92,5 +95,57 @@ class PdfRenderTest {
             )
         }
         println("PDF_RENDER_URI=$uri")
+    }
+
+    /**
+     * The page count follows the number chosen at print time, in the real PDF rather than
+     * in the layout data. Fifty one-person households at fifty to a booklet is four pages,
+     * not eight. The file is left in Download so the footer can be read off the paper too.
+     */
+    @Test
+    fun writesAFourPageBookletWhenFiftyIsChosen() {
+        val voters = (1..50).map { i ->
+            Voter(
+                id = "f$i", serial = i, name = "TEST PERSON $i", house = "10-1-$i",
+                voterId = "WQQ%07d".format(i), phone = "9876543210",
+                address = "MAIN STREET", familyId = "f$i", familyOrder = 0,
+            )
+        }
+        val survey = Survey(
+            booth = Booth(
+                boothNo = "108", mandal = "Palakollu", townWard = "Palakollu",
+                label = "Booth 108", voters = voters,
+                families = (1..50).map { Family(id = "f$it", order = it - 1) },
+            ),
+            lists = Lists(),
+        )
+        val name = "booklet-50.pdf"
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+            put(
+                android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                android.os.Environment.DIRECTORY_DOWNLOADS,
+            )
+        }
+        val resolver = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().context.contentResolver
+        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!
+        resolver.openOutputStream(uri)!!.use { os ->
+            PdfExporter.write(
+                os, PrintOrder.blocks(survey),
+                PdfExporter.Options(
+                    mandal = "Palakollu", townWard = "Palakollu", boothNo = "108",
+                    votersPerBooklet = 50,
+                ),
+            )
+        }
+        val file = File("/sdcard/Download/$name")
+        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+            PdfRenderer(fd).use { renderer ->
+                assertEquals("fifty voters make four pages", 4, renderer.pageCount)
+            }
+        }
+        println("PDF_FIFTY_URI=$uri")
     }
 }

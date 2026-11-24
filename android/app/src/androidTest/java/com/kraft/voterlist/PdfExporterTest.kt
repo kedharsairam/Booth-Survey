@@ -63,14 +63,14 @@ class PdfExporterTest {
 
     @Test
     fun onePageForASmallRoll() {
-        val pages = PdfExporter.layout(PrintOrder.blocks(survey(2)), false, false).first
+        val pages = PdfExporter.layout(PrintOrder.blocks(survey(2)), PdfExporter.Options()).pages
         assertEquals("two people fit on one page", 1, pages.size)
         assertEquals("both printed", 2, PdfExporter.printedRows(pages.first()))
     }
 
     @Test
     fun fifteenToAPageAndNoBlankPages() {
-        val pages = PdfExporter.layout(PrintOrder.blocks(survey(31)), false, false).first
+        val pages = PdfExporter.layout(PrintOrder.blocks(survey(31)), PdfExporter.Options()).pages
         assertEquals("31 people at 15 a page", 3, pages.size)
         pages.forEachIndexed { i, p ->
             val used = PdfExporter.printedRows(p)
@@ -92,16 +92,16 @@ class PdfExporterTest {
         val oneDone = withVoters(s) { it.copy(visited = it.serial == 1) }
         assertEquals(
             "one of four surveyed: the house still prints",
-            4, PdfExporter.layout(PrintOrder.blocks(oneDone), true, false).first.sumOf { PdfExporter.printedRows(it) },
+            4, PdfExporter.layout(PrintOrder.blocks(oneDone), PdfExporter.Options(onlyPending = true)).pages.sumOf { PdfExporter.printedRows(it) },
         )
         val allDone = withVoters(s) { it.copy(visited = true) }
         assertEquals(
             "everybody done: the house is off the pending booklet",
-            0, PdfExporter.layout(PrintOrder.blocks(allDone), true, false).first.size,
+            0, PdfExporter.layout(PrintOrder.blocks(allDone), PdfExporter.Options(onlyPending = true)).pages.size,
         )
         assertEquals(
             "but it is still there in the full booklet",
-            1, PdfExporter.layout(PrintOrder.blocks(allDone), false, false).first.size,
+            1, PdfExporter.layout(PrintOrder.blocks(allDone), PdfExporter.Options()).pages.size,
         )
     }
 }

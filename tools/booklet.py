@@ -69,7 +69,20 @@ ROW1_H_MM = 9.81
 ROW2_H_MM = 14.82                          # the English template's heading row
 ROW_H_MM = 9.82
 ROWS_PER_PAGE = 15
-PAGES_PER_BOOKLET = 4
+
+# How many people go in a booklet is a choice made at generation time, not a property
+# of the form. The paper is fixed at fifteen rows a page; the page count follows from
+# the number asked for. This tool and the Android exporter take the same number, so
+# neither can drift on the count. The tool stays more conservative about households
+# (it never splits one across a page, as it always has), so a booklet here can carry
+# one extra short page; the voter cap is the same in both.
+DEFAULT_VOTERS_PER_BOOKLET = 108
+MIN_VOTERS_PER_BOOKLET = 1
+MAX_VOTERS_PER_BOOKLET = 1000  # an accidental 100000 must not produce a 6667-page file
+
+
+def pages_per_booklet(voters: int) -> int:
+    return -(-voters // ROWS_PER_PAGE)
 
 # The template declares 11 pt in every heading cell, but it also declares a row
 # height of 19.83 mm, and the longest heading ("ఓటర్ లిస్ట్ వరుస నెం." in a 15 mm
@@ -202,26 +215,52 @@ def order_families(families: list[Family]) -> list[Family]:
     return sorted(families, key=lambda f: min(int(p.voter_serial or 0) for p in f.members))
 
 
-def paginate(families: list[Family]) -> list[list[tuple[int, Person]]]:
-    """Pages of fifteen rows, never splitting a family across a page.
+def paginate(
+    families: list[Family], voters_per_booklet: int = DEFAULT_VOTERS_PER_BOOKLET
+) -> tuple[list[list[tuple[int, Person]]], list[int]]:
+    """Pages of fifteen rows, closing a booklet at the requested number of voters.
 
-    The family serial is recomputed from membership on every call rather than
-    stored, so deleting a member closes the gap instead of leaving a hole.
+    A family never splits across a page, so it cannot split across a booklet either:
+    one that will not fit the rows left in this booklet moves whole to the next one.
+    The family serial is recomputed from membership on every call rather than stored,
+    so deleting a member closes the gap instead of leaving a hole.
+
+    Returns the pages and the one-based booklet each page belongs to. The booklet is
+    carried per page because its page count is no longer fixed -- a division by a
+    constant would label the wrong pages as soon as the number changes.
     """
+    if not MIN_VOTERS_PER_BOOKLET <= voters_per_booklet <= MAX_VOTERS_PER_BOOKLET:
+        raise ValueError(
+            f"voters_per_booklet must be {MIN_VOTERS_PER_BOOKLET}.."
+            f"{MAX_VOTERS_PER_BOOKLET}, got {voters_per_booklet}"
+        )
     pages: list[list[tuple[int, Person]]] = []
+    booklet_of_page: list[int] = []
     current: list[tuple[int, Person]] = []
     used = 0
+    in_booklet = 0
+    booklet = 1
     for family in order_families(families):
         n = len(family.members)
+        if in_booklet + n > voters_per_booklet:
+            if current:
+                pages.append(current)
+                booklet_of_page.append(booklet)
+                current, used = [], 0
+            booklet += 1
+            in_booklet = 0
         if used + n > ROWS_PER_PAGE:
             pages.append(current)
+            booklet_of_page.append(booklet)
             current, used = [], 0
         for i, member in enumerate(family.members, start=1):
             current.append((i, member))
             used += 1
+            in_booklet += 1
     if current:
         pages.append(current)
-    return pages
+        booklet_of_page.append(booklet)
+    return pages, booklet_of_page
 
 
 def wasted_rows(pages: list[list[tuple[int, Person]]], families: list[Family]) -> list[str]:
@@ -357,7 +396,9 @@ def page_html(rows: list[tuple[int, Person]], footer: str = "") -> str:
     )
 
 
-def document_html(pages: list[list[tuple[int, Person]]], total_booklets: int) -> str:
+def document_html(
+    pages: list[list[tuple[int, Person]]], booklet_of_page: list[int], total_booklets: int
+) -> str:
     printable_w = PAGE_W_MM - 2 * MARGIN_MM - TABLE_INDENT_MM
     table_h = ROW1_H_MM + ROW2_H_MM + ROWS_PER_PAGE * ROW_H_MM
 
@@ -378,18 +419,23 @@ def document_html(pages: list[list[tuple[int, Person]]], total_booklets: int) ->
     table_rendered = table_h + 17 * BORDER_PER_ROW_MM
     foot = pdf_printable_h - top_shift - table_rendered
 
-    # The last booklet is short whenever the ward does not divide by sixty, and it
-    # must not claim four pages when it has three.
-    pages_in_last = len(pages) - PAGES_PER_BOOKLET * (total_booklets - 1)
+    # A booklet's page count comes from the number of voters it holds, so the footer
+    # reads the booklet each page actually belongs to rather than dividing by a constant.
+    pages_in_booklet: dict[int, int] = {}
+    for book in booklet_of_page:
+        pages_in_booklet[book] = pages_in_booklet.get(book, 0) + 1
+    first_page_of_booklet: dict[int, int] = {}
+    for i, book in enumerate(booklet_of_page):
+        first_page_of_booklet.setdefault(book, i)
 
     rendered = []
     for i, rows in enumerate(pages):
-        booklet = i // PAGES_PER_BOOKLET + 1
-        page_in_booklet = i % PAGES_PER_BOOKLET + 1
+        booklet = booklet_of_page[i]
+        page_in_booklet = i - first_page_of_booklet[booklet] + 1
         if total_booklets == 1:
             label = f"page {i + 1}"
         else:
-            of = pages_in_last if booklet == total_booklets else PAGES_PER_BOOKLET
+            of = pages_in_booklet[booklet]
             label = f"booklet {booklet} of {total_booklets} — page {page_in_booklet} of {of}"
         rendered.append(page_html(rows, label))
     return f"""<!doctype html>
@@ -518,23 +564,33 @@ def main() -> None:
     ap.add_argument("--out")
     ap.add_argument("--notes", action="store_true", help="print the short-page notes")
     ap.add_argument("--count", type=int, default=42,
-                    help="demo size; 130 gives three booklets so a fold is visible")
+                    help="demo size; 230 gives three booklets at the default 108")
+    ap.add_argument(
+        "--voters-per-booklet", type=int, default=DEFAULT_VOTERS_PER_BOOKLET,
+        help=f"voters in each booklet ({MIN_VOTERS_PER_BOOKLET}.."
+             f"{MAX_VOTERS_PER_BOOKLET}, default {DEFAULT_VOTERS_PER_BOOKLET})",
+    )
     args = ap.parse_args()
 
     out = args.demo or args.out
     if not out:
         ap.error("need --demo or --out")
+    if not MIN_VOTERS_PER_BOOKLET <= args.voters_per_booklet <= MAX_VOTERS_PER_BOOKLET:
+        ap.error(
+            f"--voters-per-booklet must be {MIN_VOTERS_PER_BOOKLET}.."
+            f"{MAX_VOTERS_PER_BOOKLET}"
+        )
 
     if args.data:
         families = load(args.data)
     else:
         families = demo_families(args.count)
-    pages = paginate(families)
+    pages, booklet_of_page = paginate(families, args.voters_per_booklet)
     total = sum(len(f.members) for f in families)
-    booklets = max(1, -(-len(pages) // PAGES_PER_BOOKLET))
+    booklets = max(booklet_of_page) if booklet_of_page else 0
 
     os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
-    render(document_html(pages, booklets), out)
+    render(document_html(pages, booklet_of_page, booklets), out)
 
     print(f"  families : {len(families)}")
     print(f"  people   : {total}")

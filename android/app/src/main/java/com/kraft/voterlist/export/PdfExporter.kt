@@ -80,7 +80,19 @@ object PdfExporter {
     private val ROW2_H = 42.50f
     private val ROW_H = 28.35f
     private const val ROWS_PER_PAGE = 15
-    private const val PAGES_PER_BOOKLET = 8
+
+    /**
+     * Voters per booklet is a choice made when the booklet is printed, not a property of the
+     * form. The paper is fixed at fifteen rows to a page; how many pages get stapled together
+     * follows from the number the operator enters -- 50 voters is four pages, 108 is eight,
+     * 150 is ten. Nothing in the layout depends on a hard-coded page count.
+     */
+    const val DEFAULT_VOTERS_PER_BOOKLET = 108
+    const val MIN_VOTERS_PER_BOOKLET = 1
+    const val MAX_VOTERS_PER_BOOKLET = 1000  // an accidental 100000 must not produce a 6667-page file
+
+    /** Pages needed to hold [voters] at fifteen rows a page. */
+    fun pagesPerBooklet(voters: Int): Int = (voters + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE
 
     // ---- the form's type sizes --------------------------------------------------------
 
@@ -134,7 +146,14 @@ object PdfExporter {
         val boothNo: String = "",
         val onlyPending: Boolean = false,
         val onlyFamilies: Boolean = false,
-    )
+        val votersPerBooklet: Int = DEFAULT_VOTERS_PER_BOOKLET,
+    ) {
+        init {
+            require(votersPerBooklet in MIN_VOTERS_PER_BOOKLET..MAX_VOTERS_PER_BOOKLET) {
+                "votersPerBooklet must be $MIN_VOTERS_PER_BOOKLET..$MAX_VOTERS_PER_BOOKLET, got $votersPerBooklet"
+            }
+        }
+    }
 
     /**
      * One printed row: a block of voters, and the slice of it that fits on this page.
@@ -151,73 +170,89 @@ object PdfExporter {
     data class Row(val block: PrintOrder.Block, val from: Int, val to: Int)
 
     /**
-     * Lays households out into pages, fifteen rows a page.
+     * What one layout produced.
      *
-     * Pages 1 to 3 of a booklet fill straight through and a household runs on to the next
-     * page when it does not fit. Only the booklet's fourth page protects a household: one
-     * that will not fit in the rows remaining moves whole to the next booklet rather than
-     * being torn across two stapled books.
-     *
-     * Splitting on every page would guarantee sixty a booklet, but it would also put half a
-     * household on one sheet and half on another for every house that crossed a boundary,
-     * which is the thing a stapled booklet exists to prevent. The gaps this leaves are
-     * reported, because a page with three blank rows at the bottom is a page somebody will
-     * otherwise think has been missed.
-     *
-     * The one exception is a household larger than a whole page. It cannot be printed
-     * unsplit anywhere, so it runs on and continues overleaf.
+     * Booklet membership is carried per page rather than recomputed in the footer as
+     * `pageIndex / 8`. Once the voter count can change, the number of pages in a booklet
+     * changes with it, and that division would label the wrong pages.
      */
-    fun layout(
-        blocks: List<PrintOrder.Block>,
-        onlyPending: Boolean,
-        onlyFamilies: Boolean,
-    ): Pair<List<List<Row>>, List<String>> {
-        val pages = mutableListOf<MutableList<Row>>()
+    data class LayoutResult(
+        val pages: List<List<Row>>,
+        val bookletOfPage: List<Int>,  // one-based
+        val booklets: Int,
+        val notes: List<String>,
+    )
+
+    /**
+     * Lays households out into pages of fifteen rows, and closes a booklet at the number of
+     * voters chosen for this export.
+     *
+     * The paper is fixed. Everything else follows from that number: fifty voters make a
+     * four-page booklet, a hundred and fifty make a ten-page one. A booklet closes before a
+     * household would take it past the number, so a booklet holds at most the requested count
+     * and occasionally a few fewer. A short last page is expected, not an error.
+     *
+     * Households still run on across pages inside a booklet -- that is what keeps the pages
+     * full. What never changes is the booklet boundary: a household that will not fit in the
+     * rows left in this booklet moves whole to the next one rather than being torn across two
+     * stapled books. The one exception is a household larger than a whole page, which cannot
+     * be printed unsplit anywhere and has to run on.
+     */
+    fun layout(blocks: List<PrintOrder.Block>, opts: Options): LayoutResult {
+        val pages = mutableListOf<List<Row>>()
+        val bookletOfPage = mutableListOf<Int>()
         val notes = mutableListOf<String>()
         var page = mutableListOf<Row>()
-        var used = 0
+        var used = 0       // printed rows on this page
+        var inBooklet = 0  // printed rows in this booklet
+        var booklet = 1
 
-        fun flush() {
+        fun flushPage() {
             pages += page
+            bookletOfPage += booklet
             page = mutableListOf()
             used = 0
         }
 
-        // The last page of a booklet. A family that will not fit in what is left of it moves
-        // whole to the next booklet, because a stapled booklet is the unit that gets carried
-        // and a house split across two of them is two trips to one door.
-        //
-        // On the other three pages nothing is protected. They have to fill: four pages of
-        // fifteen is sixty, and a booklet that refuses to split anything lands on fifty-odd
-        // and leaves the surveyor short on every single booklet.
-        fun onBookletEnd() = pages.size % PAGES_PER_BOOKLET == PAGES_PER_BOOKLET - 1
+        // The fold is at the voter count, not at a fixed page number. A partly empty page
+        // there is the point of the feature, not something to fill.
+        fun closeBooklet() {
+            if (page.isNotEmpty()) flushPage()
+            booklet++
+            inBooklet = 0
+        }
 
         for (b in blocks) {
             if (b.members.isEmpty()) continue
             // "Families only" drops anyone not in a family: solos and unassigned voters
             // stay out of the sheet entirely.
-            if (onlyFamilies && b.familyId == null) continue
+            if (opts.onlyFamilies && b.familyId == null) continue
             // "Still to visit" skips a block only when every single member is done. A house
             // where one of four has been surveyed still has three people standing behind it,
             // and dropping it would quietly shorten the day's work.
             // The same question the spreadsheet asks, asked per household. Both go through
             // Booth so they cannot drift apart again.
-            if (onlyPending && b.isFinished()) continue
+            if (opts.onlyPending && b.isFinished()) continue
 
             var at = 0
             while (at < b.members.size) {
                 val left = b.members.size - at
-                val room = ROWS_PER_PAGE - used
+                val pageRoom = ROWS_PER_PAGE - used
+                val bookRoom = opts.votersPerBooklet - inBooklet
 
-                if (room == 0) {
-                    flush()
+                if (pageRoom == 0 || bookRoom == 0) {
+                    if (bookRoom == 0) closeBooklet() else flushPage()
                     continue
                 }
 
-                // Fits in what is left here: take it and stop.
+                // Both limits apply. A household may run on across a page inside a booklet,
+                // but it never crosses the booklet boundary.
+                val room = minOf(pageRoom, bookRoom)
+
                 if (left <= room) {
                     page += Row(b, at, b.members.size)
                     used += left
+                    inBooklet += left
                     break
                 }
 
@@ -227,45 +262,59 @@ object PdfExporter {
                         "of $ROWS_PER_PAGE, so it runs on"
                     page += Row(b, at, at + room)
                     at += room
-                    flush()
+                    used += room
+                    inBooklet += room
+                    flushPage()
                     continue
                 }
 
-                // Small enough to fit on a page of its own, but not in the room left here. At
-                // the end of a booklet it moves whole; anywhere else it runs on to the next
-                // page of this same booklet, which is what keeps the count at sixty.
-                if (onBookletEnd()) {
+                if (bookRoom < pageRoom) {
+                    // It is the booklet that stops it, so move the whole household. That is
+                    // the same rule the old fixed-size booklet applied on its last page.
                     notes += "${b.label.ifBlank { "A family" }} has $left members and only $room " +
-                        "row(s) left on page ${pages.size + 1}, so it moves whole to the next booklet"
-                    flush()
-                    continue
+                        "row(s) left in booklet $booklet, so it moves whole to the next booklet"
+                    closeBooklet()
+                } else {
+                    page += Row(b, at, at + room)
+                    at += room
+                    used += room
+                    inBooklet += room
+                    flushPage()
                 }
-
-                page += Row(b, at, at + room)
-                at += room
-                flush()
             }
         }
         if (page.isNotEmpty()) {
             notes += "last page: ${ROWS_PER_PAGE - used} row(s) unused"
-            flush()
+            flushPage()
         }
 
         for ((i, p) in pages.withIndex()) {
             val unused = ROWS_PER_PAGE - printedRows(p)
             if (unused in 1 until ROWS_PER_PAGE) {
-                notes += "page ${i + 1}: $unused row(s) unused — a family was moved whole to the next booklet"
+                notes += "page ${i + 1} (booklet ${bookletOfPage[i]}): $unused row(s) unused"
             }
         }
-        return pages to notes
+        return LayoutResult(pages, bookletOfPage, bookletOfPage.maxOrNull() ?: 0, notes)
     }
 
     /** Printed rows on a page. A Row may cover several. */
     fun printedRows(page: List<Row>): Int = page.sumOf { it.to - it.from }
 
     fun write(out: OutputStream, blocks: List<PrintOrder.Block>, opts: Options = Options()) {
-        val (pages, _) = layout(blocks, opts.onlyPending, opts.onlyFamilies)
-        android.util.Log.i("VoterSurvey", "booklet: ${blocks.size} blocks -> ${pages.size} pages")
+        val result = layout(blocks, opts)
+        val pages = result.pages
+        android.util.Log.i(
+            "VoterSurvey",
+            "booklet: ${blocks.size} blocks -> ${pages.size} pages, " +
+                "${result.booklets} booklets, ${opts.votersPerBooklet} voters per booklet",
+        )
+        // The footer reads the booklet each page actually belongs to. Deriving it from a page
+        // number would break the moment a booklet stops being eight pages long.
+        val pagesInBooklet = result.bookletOfPage.groupingBy { it }.eachCount()
+        val firstPageOfBooklet = mutableMapOf<Int, Int>()
+        result.bookletOfPage.forEachIndexed { index, book ->
+            firstPageOfBooklet.putIfAbsent(book, index)
+        }
         val doc = PdfDocument()
 
         val rule = Paint().apply {
@@ -308,11 +357,10 @@ object PdfExporter {
 
             drawRules(c, rule)
 
-            val booklet = pageIndex / PAGES_PER_BOOKLET + 1
-            val inBooklet = pageIndex % PAGES_PER_BOOKLET + 1
-            val booklets = (pages.size + PAGES_PER_BOOKLET - 1) / PAGES_PER_BOOKLET
+            val book = result.bookletOfPage[pageIndex]
+            val inBooklet = pageIndex - firstPageOfBooklet.getValue(book) + 1
             c.drawText(
-                "booklet $booklet of $booklets — page $inBooklet of $PAGES_PER_BOOKLET",
+                "booklet $book of ${result.booklets} — page $inBooklet of ${pagesInBooklet.getValue(book)}",
                 TABLE_X, PAGE_H - MARGIN + 14f, foot,
             )
 
